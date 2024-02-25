@@ -1,0 +1,19 @@
+[[{
+    "nome": "Eric",
+    "cognome": "Clapton",
+    "matricola": "1",
+    "indirizzoemail": "e.clapton@cream.co.uk",
+    "gruppi": "Cream"
+},{
+    "nome": "Ginger",
+    "cognome": "Baker",
+    "matricola": "2",
+    "indirizzoemail": "g.baker@cream.co.uk",
+    "gruppi": "Cream"
+},{
+    "nome": "Jack",
+    "cognome": "Bruce",
+    "matricola": "3",
+    "indirizzoemail": "j.bruce@cream.co.uk",
+    "gruppi": "Cream"
+}]]
