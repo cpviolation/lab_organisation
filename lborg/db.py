@@ -70,6 +70,25 @@ def create_database(name):
     connection.close()
     return
 
+def get_db_columns(name):
+    """Get the columns of the database
+
+    Args:
+        name (str): the file name containing the database
+
+    Returns:
+        list: a list of the columns of the database
+    """    
+    # Connect to a database
+    connection = sqlite3.connect(name)
+    # Create a cursor object to interact with the database
+    cursor = connection.cursor()
+    # Get the columns
+    cursor.execute(f"PRAGMA table_info(students)")
+    columns = cursor.fetchall()
+    connection.close()
+    return [col[1] for col in columns]
+
 def create_query(columns=None, order=None):
     """Given the columns and the order, creates a query to be used with the database
 
@@ -88,7 +107,8 @@ def create_query(columns=None, order=None):
     if columns is None:
         query += "*"
     else:
-        if not all([hasattr(db_student, col) for col in columns]):
+        db_columns = get_db_columns('test/dummy.db')
+        if not all([col in db_columns for col in columns]):
             raise ValueError("One or more columns not found in the database")
         query += ', '.join(columns)
     query += " FROM students"
@@ -138,6 +158,73 @@ def insert_items(name, items):
     for it in items:
         exec_str += print_db_student_as_tuple(it) + ','
     exec_str = exec_str[:-1]
+    cursor.execute(exec_str)
+    # Commit the changes
+    connection.commit()
+    # Close the connection
+    connection.close()
+    return
+
+def update_db(name, item, column, value):
+    """Update a column of a database item
+
+    Args:
+        name (str): the file name containing the database
+        item (db_item): the item to update
+        column (str): the column to update
+        value (str): the new value for the column
+    """    
+    # Connect to a database
+    connection = sqlite3.connect(name)
+    # Create a cursor object to interact with the database
+    cursor = connection.cursor()
+    # Update the column
+    cursor.execute(f"UPDATE students SET {column} = '{value}' WHERE cognome = '{item.cognome}' AND nome = '{item.nome}'")
+    # Commit the changes
+    connection.commit()
+    # Close the connection
+    connection.close()
+    return
+
+def check_column(name, column):
+    """Check if a column is present in the database
+
+    Args:
+        name (str): the file name containing the database
+        column (str): the name of the column to check
+
+    Returns:
+        bool: True if the column is present, False otherwise
+    """    
+    # Connect to a database
+    connection = sqlite3.connect(name)
+    # Create a cursor object to interact with the database
+    cursor = connection.cursor()
+    # Check if the column is present
+    cursor.execute(f"PRAGMA table_info(students)")
+    columns = cursor.fetchall()
+    connection.close()
+    return column in [col[1] for col in columns]
+
+def add_column(name, column, type, default=None):
+    """Add a column to the database
+
+    Args:
+        name (str): the file name containing the database
+        column (str): the name of the column to add
+        type (str): the type of the column to add
+    """    
+    if check_column(name, column):
+        print(f'Column {column} already present in the database {name}!')
+        return
+    # Connect to a database
+    connection = sqlite3.connect(name)
+    # Create a cursor object to interact with the database
+    cursor = connection.cursor()
+    # Add a column
+    exec_str = f"ALTER TABLE students ADD COLUMN {column} {type}"
+    if default is not None:
+        exec_str += f" DEFAULT {default}"
     cursor.execute(exec_str)
     # Commit the changes
     connection.commit()
