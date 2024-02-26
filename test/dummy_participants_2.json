@@ -1,0 +1,19 @@
+[[{
+    "nome": "John",
+    "cognome": "Mayer",
+    "matricola": "4",
+    "indirizzoemail": "j.mayer@jmtrio.com",
+    "gruppi": "JM Trio"
+},{
+    "nome": "Steve",
+    "cognome": "Jordan",
+    "matricola": "5",
+    "indirizzoemail": "s.jordan@jmtrio.com",
+    "gruppi": "JM Trio"
+},{
+    "nome": "Pino",
+    "cognome": "Palladino",
+    "matricola": "6",
+    "indirizzoemail": "p.palladino@jmtrio.com",
+    "gruppi": "JM Trio"
+}]]
