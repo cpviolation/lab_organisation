@@ -34,7 +34,7 @@ def print_db_student_as_tuple(item):
     out+= f"'{item.coorte}')"
     return out 
 
-def create_database(name):
+def create_database(name, overwrite=False):
     """Creates a database with the default structure 
 
     | key | type |
@@ -51,7 +51,11 @@ def create_database(name):
         name (str): the file name containing the database
     """
     # Check if the file already exists
-    if os.path.exists(name): raise ValueError(f'Database {name} already exists!')
+    if os.path.exists(name): 
+        if overwrite: 
+            os.remove(name)
+        else:
+            raise ValueError(f'Database {name} already exists!')
     # Connect to a database (or create it if it doesn't exist)
     if not os.path.exists(name[:name.rfind('/')]): os.makedirs(name[:name.rfind('/')])
     connection = sqlite3.connect(name)
@@ -70,7 +74,7 @@ def create_database(name):
     connection.close()
     return
 
-def create_query(columns=None, order=None):
+def create_query(columns=None, filter=None, order=None):
     """Given the columns and the order, creates a query to be used with the database
 
     Args:
@@ -92,6 +96,8 @@ def create_query(columns=None, order=None):
             raise ValueError("One or more columns not found in the database")
         query += ', '.join(columns)
     query += " FROM students"
+    if filter is not None:
+        query += " WHERE " + filter
     if order is not None:
         if not hasattr(db_student, order):
             raise ValueError(f"Column {order} not found in the database")
