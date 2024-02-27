@@ -1,6 +1,6 @@
 import os
 import json
-from lborg.db import db_student, create_database, insert_items, check_column, update_db
+from lborg.db import db_student, create_database, insert_items, check_column, update_db, create_query, query_database
 
 def add_participants_to_db(json_file, cohort='2023/24',db_name='data/dummy.db', 
                            update=False, overwrite=False):
@@ -48,3 +48,20 @@ def assign_group(json_file, db_name='data/dummy.db'):
                              None)
         update_db(db_name, st_item, 'gruppo', student['gruppo'])
     return
+
+def get_groups(cohort, db_name='data/dummy.db'):
+    # check if database exists
+    if not os.path.exists(db_name):
+        raise ValueError(f'Database {db_name} not found!')
+    # query the database
+    query = create_query(columns=['cognome','nome','mail','gruppo'], order='cognome')
+    data, desc = query_database(db_name,query)
+    # order data by group number
+    sorted_array = sorted(data, key=lambda x: x[3])
+    # create dictionary with groups
+    groups = {}
+    for student in sorted_array:
+        if student[3] not in groups.keys():
+            groups[student[3]] = []
+        groups[student[3]].append(student) 
+    return groups
