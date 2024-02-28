@@ -26,7 +26,6 @@ def make_signature_table(db_name, cohort, date):
         for it in item:
             data_table.append([group, f'{it[0]} {it[1]}', ''])
 
-    print(data_table)
     # Tabulate the rows
     columns = ['Gruppo', 'Studente', 'Firma']
     table = tabulate(data_table, headers=columns, tablefmt="grid")
