@@ -54,7 +54,7 @@ def get_groups(cohort, db_name='data/dummy.db'):
     if not os.path.exists(db_name):
         raise ValueError(f'Database {db_name} not found!')
     # query the database
-    query = create_query(columns=['cognome','nome','mail','gruppo'], order='cognome')
+    query = create_query(db_name, columns=['cognome','nome','mail','gruppo'], order='cognome')
     data, desc = query_database(db_name,query)
     # order data by group number
     sorted_array = sorted(data, key=lambda x: x[3])
@@ -63,5 +63,6 @@ def get_groups(cohort, db_name='data/dummy.db'):
     for student in sorted_array:
         if student[3] not in groups.keys():
             groups[student[3]] = []
-        groups[student[3]].append(student) 
+        if student[3]: 
+            groups[student[3]].append(student) 
     return groups

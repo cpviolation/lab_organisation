@@ -93,7 +93,7 @@ def get_db_columns(name):
     connection.close()
     return [col[1] for col in columns]
 
-def create_query(columns=None, filter=None, order=None):
+def create_query(name, columns=None, filter=None, order=None):
     """Given the columns and the order, creates a query to be used with the database
 
     Args:
@@ -107,11 +107,12 @@ def create_query(columns=None, filter=None, order=None):
     Returns:
         str: the query to be used with the database
     """
+    if not os.path.exists(name): raise ValueError(f'Database {name} does not exist!')
     query = "SELECT "
     if columns is None:
         query += "*"
     else:
-        db_columns = get_db_columns('test/dummy.db')
+        db_columns = get_db_columns(name)
         if not all([col in db_columns for col in columns]):
             raise ValueError("One or more columns not found in the database")
         query += ', '.join(columns)
