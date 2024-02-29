@@ -12,7 +12,7 @@ args = parser.parse_args()
 
 def main():
     # get groups
-    groups = get_groups(args.cohort, db_name=args.db_name)
+    #groups = get_groups(args.cohort, db_name=args.db_name)
     make_signature_table(args.db_name, args.cohort, args.date)
     return
 
