@@ -51,7 +51,7 @@ def make_signature_table(db_name, cohort, date, title='Laboratorio I - Turno Bet
         tables += [make_latex_table(data_table,group_id_start=group_id)]
 
     # write the latex table to file
-    latex = r'\documentclass{article}'+'\n'
+    latex = r'\documentclass[12pt]{article}'+'\n'
     latex +=r'\usepackage{multirow}'+'\n'
     latex +=r'\usepackage{tabularx}'+'\n'
     latex +=r'\usepackage[margin=1in]{geometry} % Set all margins to 1 inch'+'\n'
