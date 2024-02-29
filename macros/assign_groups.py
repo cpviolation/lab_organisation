@@ -24,11 +24,6 @@ def main():
     data, desc = query_database(args.db_name,query)
     # print table out of data and omit column 'coorte'
     make_table(data, columns=[description[0] for description in desc])
-
-    # get groups
-    groups = get_groups(args.cohort, db_name=args.db_name)
-    #print(groups)
-    make_signature_table(args.db_name, args.cohort, '2023-09-01')
     return
 
 if __name__ == '__main__':

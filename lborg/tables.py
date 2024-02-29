@@ -20,15 +20,23 @@ def make_signature_table(db_name, cohort, date):
 
     # modify to get table data
     data_table = []
-    group_idx = 0
     for group, item in data.items():
         print(group, item)
         for it in item:
             data_table.append([group, f'{it[0]} {it[1]}', ''])
 
     # Tabulate the rows
-    columns = ['Gruppo', 'Studente', 'Firma']
-    table = tabulate(data_table, headers=columns, tablefmt="grid")
+    columns = ['Gruppo', 'Studente', 'Firma\phantom{pppppppppppppppppp}']
+    table = tabulate(data_table, headers=columns, tablefmt="latex_longtable")
+
+    # Index of groups on multirow
+    group_id = 1
+    n_students = table.count(f' {group_id} &')
+    while (n_students):
+        table = table.replace(f' {group_id} &', f' \\multirow{{{n_students}}}{{*}}{{{group_id}}} &', 1)
+        table = table.replace(f' {group_id} &', f' &', n_students-1)
+        group_id += 1
+        n_students = table.count(f' {group_id} &')
 
     # Print the tabulated data
     print(table)
