@@ -1,7 +1,7 @@
 from context import lborg
-from lborg.data_helpers import assign_group, get_groups
-from lborg.db import add_column, create_query, query_database
-from lborg.tables import make_table, make_signature_table
+from lborg.data_helpers import assign_group
+from lborg.db import create_query, query_database
+from lborg.tables import make_table
 
 import argparse
 parser = argparse.ArgumentParser('Assign Groups Options')
@@ -13,7 +13,7 @@ args = parser.parse_args()
 
 def main():
     # add "gruppo" column to database
-    add_column(args.db_name, 'gruppo', 'INTEGER', 0)
+    #add_column(args.db_name, 'gruppo', 'INTEGER', 0)
     # assign group to participants in database
     assign_group(args.json_name, db_name=args.db_name)
 

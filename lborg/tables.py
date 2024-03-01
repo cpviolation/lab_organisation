@@ -1,10 +1,14 @@
 import os
+import numpy as np
 from tabulate import tabulate
-from lborg.db import db_student
-from lborg.data_helpers import get_groups
+from lborg.data_helpers import get_groups, get_attendance, get_hours
 
 def make_table(data, columns=['cognome','nome','matricola','mail']):
     """Creates a table from a list of db_student items
+
+    Args:
+        data (list): list of db_student items
+        columns (list, optional): list of column names. Defaults to ['cognome','nome','matricola','mail'].
     """
     # Tabulate the rows
     table = tabulate(data, headers=columns, tablefmt="grid")
@@ -14,6 +18,13 @@ def make_table(data, columns=['cognome','nome','matricola','mail']):
     return
 
 def make_latex_table(data, columns=['Gruppo','Studente','Firma'],group_id_start=1):
+    """Creates a latex table from a list of db_student items
+
+    Args:
+        data (list): list of db_student items
+        columns (list, optional): list of column names. Defaults to ['Gruppo','Studente','Firma'].
+        group_id_start (int, optional): starting group id. Defaults to 1.
+    """
     # modify to get table data
     data_table = []
     for group, item in data.items():
@@ -35,8 +46,45 @@ def make_latex_table(data, columns=['Gruppo','Studente','Firma'],group_id_start=
         n_students = table.count(f' {group_id} &')
     return table
 
-def make_signature_table(db_name, cohort, date, title='Laboratorio I - Turno Beta', output_dir='pdfs'):
+def get_latex_tables(tables, lhead='', rhead=''):
+    # write the latex table to file
+    latex = r'\documentclass[12pt]{article}'+'\n'
+    latex +=r'\usepackage{multirow}'+'\n'
+    latex +=r'\usepackage{tabularx}'+'\n'
+    latex +=r'\usepackage[margin=1in]{geometry} % Set all margins to 1 inch'+'\n'
+    latex +=r'\usepackage{fancyhdr}'+'\n\n'
+    latex +=r'% Set fancy headers'+'\n'
+    latex +=r'\pagestyle{fancy}'+'\n'
+    latex +=r'\fancyhf{} % Clear header and footer'+'\n'
+    latex +=f'\\lhead{{{lhead}}} % Set title on the top left'+'\n\n'
+    latex +=f'\\rhead{{{rhead}}} % Set date on the top right'+'\n\n'
+    latex +=r'\begin{document}'+'\n\n'
+    for table in tables:
+        latex +=r'\begin{table}[t]'+'\n'
+        latex +=r'\centering'
+        latex +=table
+        latex +=r'\end{table}'+'\n\n'
+    latex +=r'\end{document}'+'\n'
+    return latex
+
+def save_latex_table(latex_table, fname, output_dir):
+    if not os.path.exists(f'{output_dir}/latex'):
+        os.makedirs(f'{output_dir}/latex')
+    with open(f'{output_dir}/latex/{fname}', 'w') as f:
+        f.write(latex_table)
+    # create pdf
+    os.system(f'pdflatex -output-directory={output_dir} {output_dir}/latex/{fname}')
+    return
+
+def make_signature_table(db_name, cohort, date='', title='Laboratorio I - Turno Beta', output_dir='pdfs'):
     """Creates a table from a list of db_student items
+
+    Args:
+        db_name (str): database name
+        cohort (str): cohort name
+        date (str, optional): date on the signature table. Defaults to ''.
+        title (str, optional): title of the signature table. Defaults to 'Laboratorio I - Turno Beta'.
+        output_dir (str, optional): output directory. Defaults to 'pdfs'.
     """
     # get the data
     data = get_groups(cohort, db_name)
@@ -71,6 +119,48 @@ def make_signature_table(db_name, cohort, date, title='Laboratorio I - Turno Bet
 
     if not os.path.exists(f'{output_dir}/latex'):
         os.makedirs(f'{output_dir}/latex')
-    with open(f'{output_dir}/latex/{cohort.replace("/","_")}_signature_table.tex', 'w') as f:
+    fname= cohort.replace("/","_") if date=='' else date
+    fname+='_signature_table.tex'
+    with open(f'{output_dir}/latex/{fname}', 'w') as f:
         f.write(latex)
+    
+    # create pdf
+    os.system(f'pdflatex -output-directory={output_dir} {output_dir}/latex/{fname}')
+    return 
+
+def make_attendance_table(db_name, cohort, output_dir='pdfs'):
+    """Creates an attendance table for a given cohort
+    """
+    # checks
+    if not os.path.exists(db_name):
+        raise ValueError(f'Database {db_name} not found!')
+
+    # get the data
+    data, desc = get_attendance(db_name)
+    # add a column for percentage
+    columns = [description[0] for description in desc]
+    columns.append(r'\%')
+    hours = get_hours(f'data/dates_{cohort.replace('/','_')}.db')
+    print(hours)
+    data_table = []
+    for d in data:
+        d_tab = list(d)
+        count_hours = 0
+        for i in d_tab[1:]:
+            count_hours += i if i != None else 0
+        valid_hours = np.sum(hours[:-1])
+        d_tab.append(f'{float(count_hours)/valid_hours*100:.1f}')
+        data_table.append(d_tab)
+    # Tabulate the rows
+    table = tabulate(data_table, headers=columns, tablefmt="latex")
+    table = table.replace(' 1 ',' P ')
+    table = table.replace(' 0 ',' A ')
+    table = table.replace(' 2024-', ' ')
+    latex = get_latex_tables([table],lhead='Laboratorio I - Turno Beta',rhead='2023/24')
+
+    print(table)
+
+    fname=f'{cohort.replace("/","_")}_attendance_table.tex'
+    save_latex_table(latex, fname, output_dir)
+
     return

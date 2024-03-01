@@ -1,41 +1,10 @@
 import os, sqlite3
-from collections import namedtuple
+from lborg.db_items import db_item, print_db_item_as_tuple
 
-db_student = namedtuple('db_student', ['nome', 'cognome', 'matricola', 'mail','coorte'])
-
-def print_db_student(item):
-    """Prints information of a db_student item
-
-    Args:
-        item (db_student): the database item to print
-
-    Returns:
-        str: a string with the information of the database item
-    """    
-    out = f'Studente: {item.cognome} {item.nome}\n'
-    out+= f'Matricola: {item.matricola}\n'
-    out+= f'Indirizzo Email: {item.mail}\n'
-    out+= f'Coorte: {item.coorte}\n'
-    return out
-
-def print_db_student_as_tuple(item):
-    """Prints the information of a db_item as a tuple
-
-    Args:
-        item (db_item): the database item to print
-
-    Returns:
-        str: the information of the database item as a tuple
-    """    
-    out = f"('{item.cognome}',"
-    out+= f"'{item.nome}',"
-    out+= f"{item.matricola},"
-    out+= f"'{item.mail}',"
-    out+= f"'{item.coorte}')"
-    return out 
-
-def create_database(name, overwrite=False):
-    """Creates a database with the default structure 
+def create_database(name, table_name='students',
+                    structure={'cognome':'text','nome':'text','matricola':'integer','mail':'text','coorte':'text','gruppo':'integer'}, 
+                    overwrite=False):
+    """Creates a database with user-define structure. Default is:
 
     | key | type |
     |---|---|
@@ -44,11 +13,15 @@ def create_database(name, overwrite=False):
     | matricola | integer |
     | mail | text |
     | coorte | text |
+    | gruppo | integer |
     
     and saves it to file
 
     Args:
         name (str): the file name containing the database
+        table_name (str, optional): the name of the table. Defaults to 'students'.
+        structure (dict, optional): the structure of the database. Defaults to {'cognome':'text','nome':'text','matricola':'integer','mail':'text','coorte':'text','gruppo':'integer'}.
+        overwrite (bool, optional): if True, overwrites the file if it already exists. Defaults to False.
     """
     # Check if the file already exists
     if os.path.exists(name): 
@@ -62,23 +35,22 @@ def create_database(name, overwrite=False):
     # Create a cursor object to interact with the database
     cursor = connection.cursor()
     # Create a table
-    cursor.execute("""CREATE TABLE IF NOT EXISTS students (
-        cognome text,
-        nome text,
-        matricola integer,
-        mail text,
-        coorte text
-    )""")
+    exec_str = f"CREATE TABLE IF NOT EXISTS {table_name} ("
+    for key, value in structure.items():
+        exec_str += f"{key} {value},"
+    exec_str = exec_str[:-1] + ")"
+    cursor.execute(exec_str)
     # Commit the changes and close the connection
     connection.commit()
     connection.close()
     return
 
-def get_db_columns(name):
+def get_db_columns(name, table_name='students'):
     """Get the columns of the database
 
     Args:
         name (str): the file name containing the database
+        table_name (str, optional): the name of the table. Defaults to 'students'.
 
     Returns:
         list: a list of the columns of the database
@@ -88,15 +60,17 @@ def get_db_columns(name):
     # Create a cursor object to interact with the database
     cursor = connection.cursor()
     # Get the columns
-    cursor.execute(f"PRAGMA table_info(students)")
+    cursor.execute(f"PRAGMA table_info({table_name})")
     columns = cursor.fetchall()
     connection.close()
     return [col[1] for col in columns]
 
-def create_query(name, columns=None, filter=None, order=None):
+def create_query(name, table_name='students', columns=None, filter=None, order=None):
     """Given the columns and the order, creates a query to be used with the database
 
     Args:
+        name (str): the file name containing the database
+        table_name (str, optional): the name of the table. Defaults to 'students'.
         columns (list, optional): a list of columns to extract from the database. Defaults to None.
         order (str, optional): a specific column to order the output. Defaults to None.
 
@@ -112,15 +86,15 @@ def create_query(name, columns=None, filter=None, order=None):
     if columns is None:
         query += "*"
     else:
-        db_columns = get_db_columns(name)
+        db_columns = get_db_columns(name,table_name)
         if not all([col in db_columns for col in columns]):
             raise ValueError("One or more columns not found in the database")
         query += ', '.join(columns)
-    query += " FROM students"
+    query += f" FROM {table_name}"
     if filter is not None:
         query += " WHERE " + filter
     if order is not None:
-        if not hasattr(db_student, order):
+        if not hasattr(db_item[table_name], order):
             raise ValueError(f"Column {order} not found in the database")
         query += " ORDER BY " + order
     return query
@@ -149,21 +123,33 @@ def query_database(name,query):
     description = cursor.description
     return result, description
 
-def insert_items(name, items):
+def insert_items(name, items, table_name='students', ignore_keys=[]):
     """Add many items at once to the database
 
     Args:
         name (str): the file name containing the database
         items (list): a list of db_items
+        table_name(str, optional): the name of the table. Defaults to 'students'.
+        ignore_keys (list, optional): a list of keys to ignore when checking for duplicates. Defaults to [].
     """    
     # Connect to a database
     connection = sqlite3.connect(name)
     # Create a cursor object to interact with the database
     cursor = connection.cursor()
-    # Insert items
-    exec_str = "INSERT INTO students VALUES "
+    # Check if item exists in database
+    items_to_add = []
     for it in items:
-        exec_str += print_db_student_as_tuple(it) + ','
+        if check_item(name, it, table_name, ignore_keys):
+            continue
+        items_to_add.append(it)
+    if items_to_add == []:
+        print('All items already present in the database!')
+        connection.close()
+        return
+    # Insert items
+    exec_str = f"INSERT INTO {table_name} VALUES "
+    for it in items_to_add:
+        exec_str += print_db_item_as_tuple(it, table_name) + ','
     exec_str = exec_str[:-1]
     cursor.execute(exec_str)
     # Commit the changes
@@ -172,7 +158,70 @@ def insert_items(name, items):
     connection.close()
     return
 
-def update_db(name, item, column, value):
+def check_item(name, item, table_name='students',ignore_keys=[]):
+    """Check if an item is present in the database
+
+    Args:
+        name (str): the file name containing the database
+        item (db_item): the item to check
+        table_name (str, optional): the name of the table. Defaults to 'students'.
+
+    Returns:
+        bool: True if the item is present, False otherwise
+    """    
+    # Connect to a database
+    connection = sqlite3.connect(name)
+    # Create a cursor object to interact with the database
+    cursor = connection.cursor()
+    # Check if item exists in database
+    filter = ''
+    for key in item._fields:
+        if key in ignore_keys: continue
+        filter += f"{key} = '{getattr(item, key)}' AND "
+    filter = filter[:-5]
+    query= create_query(name, table_name, filter=filter)
+    cursor.execute(query)
+    result = cursor.fetchall()
+    connection.close()
+    return len(result) > 0
+
+def check_entry(name, column, value, table_name='students'):
+    # Connect to a database
+    connection = sqlite3.connect(name)
+    # Create a cursor object to interact with the database
+    cursor = connection.cursor()
+    # Check if item exists in database
+    filter = f'{column} = \'{value}\'' if type(value)==str else f'{column} = {value}'
+    query= create_query(name, table_name, filter=filter)
+    cursor.execute(query)
+    result = cursor.fetchall()
+    connection.close()
+    return len(result) > 0
+
+def add_row(name, column, value, table_name='students'):
+    """Add a row to the database by setting the value of a single column
+
+    Args:
+        name (str): the file name containing the database
+        column (str): the column to update
+        value (any): the new value for the column
+        table_name (str, optional): the name of the table. Defaults to 'students'.
+    """    
+    # Connect to a database
+    connection = sqlite3.connect(name)
+    # Create a cursor object to interact with the database
+    cursor = connection.cursor()
+    # Insert the item
+    exec_str = f"INSERT INTO {table_name} ({column}) VALUES ("
+    exec_str += f"'{value}')" if type(value) == str else f"{value})"
+    cursor.execute(exec_str)
+    # Commit the changes
+    connection.commit()
+    # Close the connection
+    connection.close()
+    return
+
+def update_db(name, column, value, filter='', table_name='students'):
     """Update a column of a database item
 
     Args:
@@ -180,25 +229,31 @@ def update_db(name, item, column, value):
         item (db_item): the item to update
         column (str): the column to update
         value (str): the new value for the column
+        table_name (str, optional): the name of the table. Defaults to 'students'.
     """    
     # Connect to a database
     connection = sqlite3.connect(name)
     # Create a cursor object to interact with the database
     cursor = connection.cursor()
     # Update the column
-    cursor.execute(f"UPDATE students SET {column} = '{value}' WHERE cognome = '{item.cognome}' AND nome = '{item.nome}'")
+    exec_str = f"UPDATE {table_name} SET {column} = "
+    exec_str += f"'{value}'" if type(value) == str else f"{value}"
+    if filter!='': exec_str += f" WHERE {filter}"
+    print(exec_str)
+    cursor.execute(exec_str)
     # Commit the changes
     connection.commit()
     # Close the connection
     connection.close()
     return
 
-def check_column(name, column):
+def check_column(name, column, table_name='students'):
     """Check if a column is present in the database
 
     Args:
         name (str): the file name containing the database
         column (str): the name of the column to check
+        table_name (str, optional): the name of the table. Defaults to 'students'.
 
     Returns:
         bool: True if the column is present, False otherwise
@@ -208,20 +263,22 @@ def check_column(name, column):
     # Create a cursor object to interact with the database
     cursor = connection.cursor()
     # Check if the column is present
-    cursor.execute(f"PRAGMA table_info(students)")
+    cursor.execute(f"PRAGMA table_info({table_name})")
     columns = cursor.fetchall()
     connection.close()
     return column in [col[1] for col in columns]
 
-def add_column(name, column, type, default=None):
+def add_column(name, column, type, default=None, table_name='students'):
     """Add a column to the database
 
     Args:
         name (str): the file name containing the database
         column (str): the name of the column to add
         type (str): the type of the column to add
+        table_name (str, optional): the name of the table. Defaults to 'students'.
+        default (str, optional): the default value for the column. Defaults to None.
     """    
-    if check_column(name, column):
+    if check_column(name, column, table_name):
         print(f'Column {column} already present in the database {name}!')
         return
     # Connect to a database
@@ -229,7 +286,7 @@ def add_column(name, column, type, default=None):
     # Create a cursor object to interact with the database
     cursor = connection.cursor()
     # Add a column
-    exec_str = f"ALTER TABLE students ADD COLUMN {column} {type}"
+    exec_str = f"ALTER TABLE {table_name} ADD COLUMN {column} {type}"
     if default is not None:
         exec_str += f" DEFAULT {default}"
     cursor.execute(exec_str)
