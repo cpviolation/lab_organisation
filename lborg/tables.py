@@ -17,16 +17,16 @@ def make_table(data, columns=['cognome','nome','matricola','mail']):
     print(table)
     return
 
-def make_latex_table(data, columns=['Gruppo','Studente','Firma'],group_id_start=1):
+def make_latex_table(data, columns=['Gruppo','Studente','Firma']):
     """Creates a latex table from a list of db_student items
 
     Args:
         data (list): list of db_student items
         columns (list, optional): list of column names. Defaults to ['Gruppo','Studente','Firma'].
-        group_id_start (int, optional): starting group id. Defaults to 1.
     """
     # modify to get table data
     data_table = []
+    group_ids = [ key for key in data.keys() if data[key] ]
     for group, item in data.items():
         print(group, item)
         for it in item:
@@ -37,13 +37,10 @@ def make_latex_table(data, columns=['Gruppo','Studente','Firma'],group_id_start=
     table = table.replace(r'\endhead', '')
     table = table.replace(r'\begin{tabularx}{rll}', r'\begin{tabularx}{\textwidth}{|r|l|X|}')
     # Index of groups on multirow
-    group_id = group_id_start
-    n_students = table.count(f' {group_id} &')
-    while (n_students):
+    for group_id in group_ids:
+        n_students = table.count(f' {group_id} &')
         table = table.replace(f' {group_id} &', ("\\hline" if group_id>1 else "")+f' \\multirow{{{n_students}}}{{*}}{{{group_id}}} &', 1)
         table = table.replace(f' {group_id} &', r'\cline{2-3} &', n_students-1)
-        group_id += 1
-        n_students = table.count(f' {group_id} &')
     return table
 
 def get_latex_tables(tables, lhead='', rhead=''):
@@ -92,11 +89,13 @@ def make_signature_table(db_name, cohort, date='', title='Laboratorio I - Turno 
     tables = []
     groups_id_split = int(len(data)/2)
     data_split = {
-        1 : {key: data[key] for key in range(1,groups_id_split)},
-        groups_id_split: {key: data[key] for key in range(groups_id_split,int(len(data)))}
+        1 : {key: data[key] if key in data.keys() else [] for key in range(1,groups_id_split)},
+        groups_id_split: {key: data[key] if key in data.keys() else [] for key in range(groups_id_split,int(len(data)))}
     }
     for group_id, data_table in data_split.items():
-        tables += [make_latex_table(data_table,group_id_start=group_id)]
+        filtered_data_table = {key: value for key, value in data_table.items() if value}
+        print(filtered_data_table)
+        tables += [make_latex_table(filtered_data_table)]
 
     # write the latex table to file
     latex = r'\documentclass[12pt]{article}'+'\n'
