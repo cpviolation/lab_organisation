@@ -140,7 +140,7 @@ def make_attendance_table(db_name, cohort, output_dir='pdfs'):
     # add a column for percentage
     columns = [description[0] for description in desc]
     columns.append(r'\%')
-    hours = get_hours(f'data/dates_{cohort.replace('/','_')}.db')
+    hours = get_hours(f'data/dates_{cohort.replace("/","_")}.db')
     print(hours)
     data_table = []
     for d in data:
