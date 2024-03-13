@@ -218,5 +218,19 @@ def calculate_attendance(db_name='data/dummy_attendance.db', db_dates='data/dumm
     # get dates
     dates, desc_dates = get_dates(db_dates)
     # calculate attendance
+    valid_hours = 0
     attendance = {}
-    return
+    for student in data:
+        days = [student[i] for i in range(1,len(student))]
+        if valid_hours == 0:
+            valid_hours = [dates[i][1] for i in range(len(days)) if days[i] is not None]
+            valid_hours = sum(valid_hours)
+            if valid_hours > 56: valid_hours = 56
+        hours = 0
+        for d, p in zip(dates,days):
+            if p is not None:
+                hours += d[1]
+        att = float(hours)/valid_hours
+        if att > 1: att = 1
+        attendance[student[0]] = att
+    return attendance
