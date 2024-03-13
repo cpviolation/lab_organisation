@@ -157,6 +157,16 @@ def add_dates_db(json_file,db_name='data/dummy_dates.db'):
     insert_items(db_name, items, 'dates')
     return
 
+def get_dates(db_name='data/dummy_dates.db'):
+    """Returns the dates dictionary from the 'dates' database
+
+    Returns:
+        dict: a dictionary with the dates and corresponding hours
+    """    
+    query = create_query(db_name, 'dates', order='date')
+    data = query_database(db_name,query)
+    return data
+
 def get_hours(db_name='data/dummy_dates.db'):
     """Returns the hours from the 'dates' database
 
@@ -181,7 +191,7 @@ def update_attendance_db(json_file, db_students_name, db_attendance_name):
     for date, students in data.items():
         for student in students:
             query = create_query(db_students_name, columns=['cognome','nome','matricola'], filter=f'cognome = "{student["cognome"]}" AND nome = "{student["nome"]}"')
-            result, = query_database(db_students_name,query)
+            result, description = query_database(db_students_name,query)
             if not result: continue
             # add student to attendance database if not present
             if not check_entry(db_attendance_name, 'matricola', result[0][2], 'attendance'):
@@ -189,12 +199,24 @@ def update_attendance_db(json_file, db_students_name, db_attendance_name):
             update_db(db_attendance_name, date, student['presente']==1, filter=f'matricola = {result[0][2]}', table_name='attendance')
     return
 
-def get_attendance(db_name='data/dummy_attendance.db'):
+def get_attendance(db_name='data/dummy_attendance.db', matricola=None):
     """Returns the attendance from the database
 
     Returns:
         list: a list with the attendance
-    """    
-    query = create_query(db_name, 'attendance', order='matricola')
+    """
+    query = create_query(db_name, 'attendance', order='matricola', 
+                         filter=f"matricola = {matricola}" if matricola is not None else None)
     data, desc = query_database(db_name,query)
     return data, desc
+
+def calculate_attendance(db_name='data/dummy_attendance.db', db_dates='data/dummy_dates.db', matricola=None):
+    """Calculates the fraction attendance from the database
+    """
+    # get the data
+    data, desc = get_attendance(db_name, matricola)
+    # get dates
+    dates, desc_dates = get_dates(db_dates)
+    # calculate attendance
+    attendance = {}
+    return

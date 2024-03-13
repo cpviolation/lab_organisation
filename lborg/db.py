@@ -239,7 +239,7 @@ def update_db(name, column, value, filter='', table_name='students'):
     exec_str = f"UPDATE {table_name} SET {column} = "
     exec_str += f"'{value}'" if type(value) == str else f"{value}"
     if filter!='': exec_str += f" WHERE {filter}"
-    print(exec_str)
+    #print(exec_str)
     cursor.execute(exec_str)
     # Commit the changes
     connection.commit()
