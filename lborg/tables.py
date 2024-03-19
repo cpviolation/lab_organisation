@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from tabulate import tabulate
-from lborg.data_helpers import get_groups, get_attendance, get_hours
+from lborg.data_helpers import get_groups, get_attendance, get_hours, calculate_attendance
 
 def make_table(data, columns=['cognome','nome','matricola','mail']):
     """Creates a table from a list of db_student items
@@ -43,9 +43,9 @@ def make_latex_table(data, columns=['Gruppo','Studente','Firma']):
         table = table.replace(f' {group_id} &', r'\cline{2-3} &', n_students-1)
     return table
 
-def get_latex_tables(tables, lhead='', rhead=''):
+def get_latex_tables(tables, lhead='', rhead='', landscape=False):
     # write the latex table to file
-    latex = r'\documentclass[12pt]{article}'+'\n'
+    latex = r'\documentclass[12pt'+(',landscape' if landscape else '')+r']{article}'+'\n'
     latex +=r'\usepackage{multirow}'+'\n'
     latex +=r'\usepackage{tabularx}'+'\n'
     latex +=r'\usepackage[margin=1in]{geometry} % Set all margins to 1 inch'+'\n'
@@ -137,25 +137,40 @@ def make_attendance_table(db_name, cohort, output_dir='pdfs'):
     # get the data
     data, desc = get_attendance(db_name)
     # add a column for percentage
-    columns = [description[0] for description in desc]
-    columns.append(r'\%')
-    hours = get_hours(f'data/dates_{cohort.replace("/","_")}.db')
+    columns = [description[0].capitalize() for description in desc]
+    columns.append('%')
+    db_dates = f'data/dates_{cohort.replace("/","_")}.db'
+    hours = get_hours(db_dates)
     print(hours)
     data_table = []
+    attendance = calculate_attendance(db_name, db_dates)
     for d in data:
         d_tab = list(d)
-        count_hours = 0
-        for i in d_tab[1:]:
-            count_hours += i if i != None else 0
-        valid_hours = np.sum(hours[:-1])
-        d_tab.append(f'{float(count_hours)/valid_hours*100:.1f}')
+        att_val = float(attendance[d_tab[0]])*100
+        # if att_val < 70:
+        #     d_tab.append(r'\textcolor{red}{'+f'{att_val:.0f}'+r'}')
+        # elif att_val < 80:
+        #     d_tab.append(r'\textcolor{orange}{'+f'{att_val:.0f}'+r'}')
+        # else:
+        d_tab.append(f'{float(att_val):.0f}' if att_val else '-')
         data_table.append(d_tab)
-    # Tabulate the rows
-    table = tabulate(data_table, headers=columns, tablefmt="latex")
-    table = table.replace(' 1 ',' P ')
-    table = table.replace(' 0 ',' A ')
-    table = table.replace(' 2024-', ' ')
-    latex = get_latex_tables([table],lhead='Laboratorio I - Turno Beta',rhead='2023/24')
+    # split the tables
+    data_split_id = int(len(data_table)/2)
+    data_split = [
+        data_table[:data_split_id],
+        data_table[data_split_id:]
+        ]
+    tables = []
+    for dt in data_split:
+        # Tabulate the rows
+        table = tabulate(dt, headers=columns, tablefmt="latex")
+        table = table.replace(' 1 ',' P ')
+        table = table.replace(' 0 ',' A ')
+        table = table.replace(' - ',' 0 ')
+        table = table.replace(' 2024-', ' ')
+        tables += [table]
+    # create latex table
+    latex = get_latex_tables(tables,lhead='Laboratorio I - Turno Beta',rhead='2023/24', landscape=True)
 
     print(table)
 

@@ -228,7 +228,7 @@ def calculate_attendance(db_name='data/dummy_attendance.db', db_dates='data/dumm
             if valid_hours > 56: valid_hours = 56
         hours = 0
         for d, p in zip(dates,days):
-            if p is not None:
+            if p is not None and p:
                 hours += d[1]
         att = float(hours)/valid_hours
         if att > 1: att = 1
