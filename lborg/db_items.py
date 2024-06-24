@@ -2,6 +2,7 @@ from collections import namedtuple
 
 db_student = namedtuple('db_student', ['nome', 'cognome', 'matricola', 'mail','coorte','gruppo'])
 db_date = namedtuple('db_date', ['date', 'hours'])
+db_exam = namedtuple('db_exam', ['date', 'type'])
 db_attendance = namedtuple('db_attendance', ['date', 'matricola'])
 db_item = {'students': db_student, 'dates': db_date, 'attendance': db_attendance}
 

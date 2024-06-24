@@ -94,7 +94,8 @@ def create_query(name, table_name='students', columns=None, filter=None, order=N
     if filter is not None:
         query += " WHERE " + filter
     if order is not None:
-        if not hasattr(db_item[table_name], order):
+        if not order in db_columns:
+        #if not hasattr(db_item[table_name], order):
             raise ValueError(f"Column {order} not found in the database")
         query += " ORDER BY " + order
     return query
@@ -149,7 +150,7 @@ def insert_items(name, items, table_name='students', ignore_keys=[]):
     # Insert items
     exec_str = f"INSERT INTO {table_name} VALUES "
     for it in items_to_add:
-        exec_str += print_db_item_as_tuple(it, table_name) + ','
+        exec_str += print_db_item_as_tuple(it) + ','
     exec_str = exec_str[:-1]
     cursor.execute(exec_str)
     # Commit the changes
