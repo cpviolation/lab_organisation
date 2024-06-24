@@ -4,7 +4,8 @@ db_student = namedtuple('db_student', ['nome', 'cognome', 'matricola', 'mail','c
 db_date = namedtuple('db_date', ['date', 'hours'])
 db_exam = namedtuple('db_exam', ['date', 'type'])
 db_attendance = namedtuple('db_attendance', ['date', 'matricola'])
-db_item = {'students': db_student, 'dates': db_date, 'attendance': db_attendance}
+db_exam_results = namedtuple('db_exam_results', ['matricola', 'written', 'written_date', 'oral', 'oral_date', 'reports', 'reports_date', 'result'])
+db_item = {'students': db_student, 'dates': db_date, 'attendance': db_attendance, 'exams': db_exam, 'results': db_exam_results}
 
 def print_db_student(item):
     """Prints information of a db_student item

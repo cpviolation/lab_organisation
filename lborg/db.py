@@ -82,11 +82,11 @@ def create_query(name, table_name='students', columns=None, filter=None, order=N
         str: the query to be used with the database
     """
     if not os.path.exists(name): raise ValueError(f'Database {name} does not exist!')
+    db_columns = get_db_columns(name,table_name)
     query = "SELECT "
     if columns is None:
         query += "*"
     else:
-        db_columns = get_db_columns(name,table_name)
         if not all([col in db_columns for col in columns]):
             raise ValueError("One or more columns not found in the database")
         query += ', '.join(columns)
@@ -198,6 +198,19 @@ def check_entry(name, column, value, table_name='students'):
     result = cursor.fetchall()
     connection.close()
     return len(result) > 0
+
+def get_entry(name, column, value, table_name='students'):
+    # Connect to a database
+    connection = sqlite3.connect(name)
+    # Create a cursor object to interact with the database
+    cursor = connection.cursor()
+    # Check if item exists in database
+    filter = f'{column} = \'{value}\'' if type(value)==str else f'{column} = {value}'
+    query= create_query(name, table_name, filter=filter)
+    cursor.execute(query)
+    result = cursor.fetchall()
+    connection.close()
+    return result
 
 def add_row(name, column, value, table_name='students'):
     """Add a row to the database by setting the value of a single column

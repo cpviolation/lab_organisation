@@ -1,7 +1,7 @@
 import os
 import json
-from lborg.db_items import db_student, db_date, db_exam
-from lborg.db import create_database, insert_items, check_column, update_db, create_query, query_database, check_entry, add_row
+from lborg.db_items import db_student, db_date, db_exam, db_exam_results
+from lborg.db import create_database, insert_items, check_column, update_db, create_query, query_database, check_entry, add_row, get_entry
 
 def add_participants_to_db(json_file, cohort='2023/24',db_name='data/dummy.db', 
                            update=False, overwrite=False):
@@ -236,7 +236,7 @@ def add_exams_db(json_file,db_name='data/dummy_exams_dates.db'):
     return
 
 
-def update_exams_db(json_file, db_students_name, db_exams_name, exam_type='written'):
+def update_exams_db(json_file, db_students_name, db_exams_name, exam_type='written', force=False):
     """Updates the exams database with the data from a json file
 
     Args:
@@ -247,16 +247,32 @@ def update_exams_db(json_file, db_students_name, db_exams_name, exam_type='writt
     """    
     data = json.load(open(json_file))
     for date, students in data.items():
-        for student in students:
-            query = create_query(db_students_name, columns=['cognome','nome','matricola'], filter=f'cognome = "{student["cognome"]}" AND nome = "{student["nome"]}"')
+        for matricola, mark in students.items():
+            print(matricola, mark)
+            query = create_query(db_students_name, columns=['cognome','nome','matricola'], filter=f'matricola = "{matricola}"')
             result, description = query_database(db_students_name,query)
             if not result: continue
-            print(result)
-            continue
             # add student to exams database if not present
             if not check_entry(db_exams_name, 'matricola', result[0][2], 'exams'):
                 add_row(db_exams_name, 'matricola', result[0][2], 'exams')
-            update_db(db_exams_name, date, student['presente']==1, filter=f'matricola = {result[0][2]}', table_name='attendance')
+            # update student exam result
+            int_mark = 0 if mark in ['A','I','R','30+'] else int(mark)
+            if mark == 'A': int_mark = -1
+            if mark == 'R': int_mark = -2
+            if mark == '30+': int_mark = 31
+            # check if the student has already a result
+            old_entry = db_exam_results(*(get_entry(db_exams_name, 'matricola', result[0][2], 'exams')[0]))
+            #print(old_entry)
+            old_date = old_entry.__getattribute__(exam_type+'_date')
+            if old_date is not None and int(old_date) < int(date):
+                old_mark = old_entry.__getattribute__(exam_type)
+                print(f'Warning: {result[0][2]} already has a {exam_type} mark from a different date!'+
+                      f' ({old_date}({old_mark}) vs {date}({int_mark}))')
+                if int_mark <= old_mark and not force: 
+                    continue
+                print('Forcing update...')
+            update_db(db_exams_name, exam_type, int_mark, filter=f'matricola = {result[0][2]}', table_name='exams')
+            update_db(db_exams_name, exam_type+'_date', date, filter=f'matricola = {result[0][2]}', table_name='exams')
     return
 
 def update_attendance_db(json_file, db_students_name, db_attendance_name):
