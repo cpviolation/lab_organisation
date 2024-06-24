@@ -199,7 +199,7 @@ def check_entry(name, column, value, table_name='students'):
     connection.close()
     return len(result) > 0
 
-def get_entry(name, column, value, table_name='students'):
+def get_entry(name, column, value, table_name='students', db_item=None):
     # Connect to a database
     connection = sqlite3.connect(name)
     # Create a cursor object to interact with the database
@@ -210,7 +210,9 @@ def get_entry(name, column, value, table_name='students'):
     cursor.execute(query)
     result = cursor.fetchall()
     connection.close()
-    return result
+    if db_item is None:
+        return result
+    return db_item(*result[0]) if len(result) > 0 else None
 
 def add_row(name, column, value, table_name='students'):
     """Add a row to the database by setting the value of a single column
