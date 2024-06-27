@@ -1,4 +1,5 @@
 from context import lborg
+from collections import namedtuple
 from lborg.db import create_query, query_database, get_entry
 from lborg.tables import make_table
 from lborg.data_helpers import calculate_attendance
@@ -13,6 +14,8 @@ parser.add_argument('--ids', type=int, default=None, nargs='+', help='Student id
 parser.add_argument('--dryrun', action='store_true', help='Dry run')
 args = parser.parse_args()
 
+db_student_plus_exam = namedtuple('StudentExam', db_student._fields + db_exam_results._fields[1:] + ('attendance',))
+
 def check_exams_db(data):
     """Cross-check the list of students with the exams database
 
@@ -24,7 +27,9 @@ def check_exams_db(data):
         student = db_student(*d)
         exam = get_entry(args.db_exams_name, 'matricola', student.matricola, 'exams', db_exam_results)
         if exam is not None and exam.written is not None and exam.written > 17:
-            valid_students.append(student)
+            # merge information
+            StudentExam = db_student_plus_exam(*(student + exam[1:] + (0.0,)))
+            valid_students.append(StudentExam)
     return valid_students
 
 def check_attendance_db(data):
@@ -36,14 +41,15 @@ def check_attendance_db(data):
     """
     valid_students = []
     for d in data:
-        student = db_student(*d)
+        #student = db_student(*d)
+        student = db_student_plus_exam(*d)
         attendance = calculate_attendance(args.db_attendance_name, 
                                           f'data/dates_{student.coorte.replace("/","_")}.db',
                                           student.matricola)
         if attendance[student.matricola] > 0.75:
-            valid_students.append(student)
+            valid_students.append(student._replace(attendance=attendance[student.matricola]))
         else:
-            print(f'Student {student.nome} {student.cognome} has an attendance of {attendance*100:.0f}% and is not added to the list')
+            print(f'Student {student.nome} {student.cognome} has an attendance of {student.attendance*100:.0f}% and is not added to the list')
     return valid_students
 
 def main():
@@ -61,7 +67,7 @@ def main():
         return
     # print table out of data and omit column 'coorte'
     print(valid_data)
-    make_table(valid_data, columns=[description[0] for description in desc])
+    make_table(valid_data, columns=list(db_student_plus_exam._fields))
     # NEED TO ADD THE EXAM RESULTS AND ATTENDANCE
     print(f'Number of students that have passed the written exam: {len(valid_data)}')
     return
