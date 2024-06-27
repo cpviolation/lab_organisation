@@ -60,7 +60,9 @@ def main():
         print('No student found with the given parameters')
         return
     # print table out of data and omit column 'coorte'
+    print(valid_data)
     make_table(valid_data, columns=[description[0] for description in desc])
+    # NEED TO ADD THE EXAM RESULTS AND ATTENDANCE
     print(f'Number of students that have passed the written exam: {len(valid_data)}')
     return
 
