@@ -101,9 +101,8 @@ def create_exams_db(db_name='data/dummy_exams.db',
         db_columns = {'matricola':'integer',
                       'written':'integer',
                       'written_date':'text',
-                      'oral':'integer',
                       'oral_date':'text',
-                      'reports':'integer',
+                      'reports':'text',
                       'reports_date':'text',
                       'result':'integer'}
         create_database(db_name, 'exams', db_columns, overwrite=overwrite)
