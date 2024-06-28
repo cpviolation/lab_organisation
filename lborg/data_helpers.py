@@ -235,6 +235,64 @@ def add_exams_db(json_file,db_name='data/dummy_exams_dates.db'):
     return
 
 
+def int_report(mark):
+    """Translates the report mark to an integer
+
+    Args:
+        mark (str): the mark value in the database
+    """
+    valid_marks = ['A+','A','A-','A-/B+',
+                   'B+','B','B-','B-/C+',
+                   'C+','C','C-','C-/C+',
+                   'D+','D','D-','E']
+    if mark not in valid_marks: 
+        return 0
+    return 31 - valid_marks.index(mark)
+
+
+def int_mark(mark,exam_type='written'):
+    """Translates the exam mark to an integer
+
+    Args:
+        mark (str): the mark value in the database
+        exam_type (str): the type of exam (written, oral, reports)
+    """
+    int_mark = 0
+    if exam_type in ['written','oral']:
+        if mark not in ['A','I','R','30+']: 
+            int_mark = int(mark)
+        if mark == 'A': int_mark = -1
+        if mark == 'R': int_mark = -2
+        if mark == '30+': int_mark = 31
+    elif exam_type == 'reports':
+        print(mark)
+        int_mark = 0
+        for experience, m in mark.items():
+            int_mark += int_report(m)
+    return int_mark
+
+
+def update_exams_entry(matricola, mark, db_exams_name, date, exam_type, force=False):
+    # add student's entry if not present
+    if not check_entry(db_exams_name, 'matricola', matricola, 'exams'):
+        add_row(db_exams_name, 'matricola', matricola, 'exams')
+    # check if the student has already a result
+    old_entry = db_exam_results(*(get_entry(db_exams_name, 'matricola', matricola, 'exams')[0]))
+    #print(old_entry)
+    old_date = old_entry.__getattribute__(exam_type+'_date')
+    if old_date is not None and int(old_date) < int(date):
+        old_mark = old_entry.__getattribute__(exam_type)
+        print(f'Warning: {matricola} already has a {exam_type} mark from a different date!'+
+              f' ({old_date}({old_mark}) vs {date}({mark}))')
+        if int_mark(mark) <= int_mark(old_mark) and not force: 
+            return
+        print('Forcing update...')
+    update_db(db_exams_name, exam_type, mark, filter=f'matricola = {matricola}', table_name='exams')
+    date_column = exam_type+'_date' if exam_type != 'result' else 'oral_date'
+    update_db(db_exams_name, date_column, date, filter=f'matricola = {matricola}', table_name='exams')
+    return
+
+
 def update_exams_db(json_file, db_students_name, db_exams_name, exam_type='written', force=False):
     """Updates the exams database with the data from a json file
 
@@ -242,36 +300,46 @@ def update_exams_db(json_file, db_students_name, db_exams_name, exam_type='writt
         json_file (str): the json file name with attendance data
         db_students_name (str): the file name of the database with students
         db_exams_name (str): the file name of the database with the exams results
-        exam_type (str): the type of exams given (written, oral, reports)
+        exam_type (str): the type of exams given (written, reports, result)
     """    
     data = json.load(open(json_file))
     for date, students in data.items():
-        for matricola, mark in students.items():
-            print(matricola, mark)
-            query = create_query(db_students_name, columns=['cognome','nome','matricola'], filter=f'matricola = "{matricola}"')
-            result, description = query_database(db_students_name,query)
-            if not result: continue
-            # add student to exams database if not present
-            if not check_entry(db_exams_name, 'matricola', result[0][2], 'exams'):
-                add_row(db_exams_name, 'matricola', result[0][2], 'exams')
-            # update student exam result
-            int_mark = 0 if mark in ['A','I','R','30+'] else int(mark)
-            if mark == 'A': int_mark = -1
-            if mark == 'R': int_mark = -2
-            if mark == '30+': int_mark = 31
-            # check if the student has already a result
-            old_entry = db_exam_results(*(get_entry(db_exams_name, 'matricola', result[0][2], 'exams')[0]))
-            #print(old_entry)
-            old_date = old_entry.__getattribute__(exam_type+'_date')
-            if old_date is not None and int(old_date) < int(date):
-                old_mark = old_entry.__getattribute__(exam_type)
-                print(f'Warning: {result[0][2]} already has a {exam_type} mark from a different date!'+
-                      f' ({old_date}({old_mark}) vs {date}({int_mark}))')
-                if int_mark <= old_mark and not force: 
-                    continue
-                print('Forcing update...')
-            update_db(db_exams_name, exam_type, int_mark, filter=f'matricola = {result[0][2]}', table_name='exams')
-            update_db(db_exams_name, exam_type+'_date', date, filter=f'matricola = {result[0][2]}', table_name='exams')
+        if exam_type == 'reports':
+            for group, marks in students.items():
+                # get the students in the group by their id (matricola)
+                query = create_query(db_students_name,columns=['matricola'], 
+                                     order='matricola', filter=f'gruppo = {group}')
+                data, desc = query_database(db_students_name,query)
+                if not data: continue
+                ids =  [i[0] for i in data]
+                # add report results to exams database
+                for matricola in ids:
+                    update_exams_entry(matricola, marks, ### TO BE FIXED. TEST WITH python -i ${LBORG}/macros/update_exams_db.py --json_exams data/raw/reports_20240617.json --exam_type reports
+                                       db_exams_name, date, 
+                                       exam_type, force=False)
+        else:
+            for matricola, mark in students.items():
+                print(matricola, mark)
+                query = create_query(db_students_name, columns=['cognome','nome','matricola'], filter=f'matricola = "{matricola}"')
+                result, description = query_database(db_students_name,query)
+                if not result: continue
+                # add student to exams database if not present
+                if not check_entry(db_exams_name, 'matricola', result[0][2], 'exams'):
+                    add_row(db_exams_name, 'matricola', result[0][2], 'exams')
+                # update student exam result
+                # check if the student has already a result
+                old_entry = db_exam_results(*(get_entry(db_exams_name, 'matricola', result[0][2], 'exams')[0]))
+                #print(old_entry)
+                old_date = old_entry.__getattribute__(exam_type+'_date')
+                if old_date is not None and int(old_date) < int(date):
+                    old_mark = old_entry.__getattribute__(exam_type)
+                    print(f'Warning: {result[0][2]} already has a {exam_type} mark from a different date!'+
+                        f' ({old_date}({old_mark}) vs {date}({mark}))')
+                    if int_mark(mark) <= int_mark(old_mark) and not force: 
+                        continue
+                    print('Forcing update...')
+                update_db(db_exams_name, exam_type, int_mark, filter=f'matricola = {result[0][2]}', table_name='exams')
+                update_db(db_exams_name, exam_type+'_date', date, filter=f'matricola = {result[0][2]}', table_name='exams')
     return
 
 def update_attendance_db(json_file, db_students_name, db_attendance_name):
