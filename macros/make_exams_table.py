@@ -2,7 +2,7 @@ from context import lborg
 from collections import namedtuple
 from lborg.db import create_query, query_database, get_entry
 from lborg.tables import make_table
-from lborg.data_helpers import calculate_attendance
+from lborg.data_helpers import calculate_attendance, int_mark
 from lborg.db_items import db_student, db_exam_results
 
 import argparse
@@ -11,6 +11,7 @@ parser.add_argument('--db_name', type=str, default='data/students.db', help='Dat
 parser.add_argument('--db_exams_name', type=str, default='data/exams.db', help='Exams database name')
 parser.add_argument('--db_attendance_name', type=str, default='data/attendance.db', help='Attendance database name')
 parser.add_argument('--ids', type=int, default=None, nargs='+', help='Student id number',required=True)
+parser.add_argument('--order', type=str, default='gruppo', help='Order')
 parser.add_argument('--dryrun', action='store_true', help='Dry run')
 args = parser.parse_args()
 
@@ -26,7 +27,7 @@ def check_exams_db(data):
     for d in data:
         student = db_student(*d)
         exam = get_entry(args.db_exams_name, 'matricola', student.matricola, 'exams', db_exam_results)
-        if exam is not None and exam.written is not None and exam.written > 17:
+        if exam is not None and exam.written is not None and int_mark(exam.written) > 17:
             # merge information
             StudentExam = db_student_plus_exam(*(student + exam[1:] + (0.0,)))
             valid_students.append(StudentExam)
@@ -58,7 +59,7 @@ def main():
     for i in args.ids[1:]:
         fltr += ' OR matricola = {}'.format(i)
     query = create_query(args.db_name,columns=None,#['cognome','nome','mail','gruppo','coorte','matricola'], 
-                         order='gruppo', filter=fltr)
+                         order=args.order, filter=fltr)
     data, desc = query_database(args.db_name,query)
     valid_data = check_exams_db(data)
     valid_data = check_attendance_db(valid_data)
