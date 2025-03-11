@@ -45,6 +45,7 @@ def create_database(name, table_name='students',
     connection.close()
     return
 
+
 def get_db_columns(name, table_name='students'):
     """Get the columns of the database
 
@@ -64,6 +65,7 @@ def get_db_columns(name, table_name='students'):
     columns = cursor.fetchall()
     connection.close()
     return [col[1] for col in columns]
+
 
 def create_query(name, table_name='students', columns=None, filter=None, order=None):
     """Given the columns and the order, creates a query to be used with the database
@@ -100,6 +102,7 @@ def create_query(name, table_name='students', columns=None, filter=None, order=N
         query += " ORDER BY " + order
     return query
 
+
 def query_database(name,query):
     """Query the database
 
@@ -124,7 +127,9 @@ def query_database(name,query):
     description = cursor.description
     return result, description
 
-def insert_items(name, items, table_name='students', ignore_keys=[]):
+
+def insert_items(name, items, table_name='students', ignore_keys=[],
+                 verbose=False):
     """Add many items at once to the database
 
     Args:
@@ -132,6 +137,7 @@ def insert_items(name, items, table_name='students', ignore_keys=[]):
         items (list): a list of db_items
         table_name(str, optional): the name of the table. Defaults to 'students'.
         ignore_keys (list, optional): a list of keys to ignore when checking for duplicates. Defaults to [].
+        verbose (bool, optional): if True, prints the query. Defaults to False.
     """    
     # Connect to a database
     connection = sqlite3.connect(name)
@@ -140,6 +146,8 @@ def insert_items(name, items, table_name='students', ignore_keys=[]):
     # Check if item exists in database
     items_to_add = []
     for it in items:
+        if verbose:
+            print(it)
         if check_item(name, it, table_name, ignore_keys):
             continue
         items_to_add.append(it)
@@ -152,11 +160,23 @@ def insert_items(name, items, table_name='students', ignore_keys=[]):
     for it in items_to_add:
         exec_str += print_db_item_as_tuple(it) + ','
     exec_str = exec_str[:-1]
-    cursor.execute(exec_str)
-    # Commit the changes
-    connection.commit()
-    # Close the connection
-    connection.close()
+    if verbose:
+        print(exec_str)
+    try:
+        cursor.execute(exec_str)
+        # Check if any rows were affected
+        if verbose:
+            if cursor.rowcount > 0:
+                print(f"Query successful, {cursor.rowcount} rows affected.")
+            else:
+                print("Query did not affect any rows.")
+        # Commit the changes
+        connection.commit()
+    except sqlite3.Error as e:
+        print(f"An error occurred: {e.args[0]}")
+    finally:
+        # Close the connection
+        connection.close()
     return
 
 def check_item(name, item, table_name='students',ignore_keys=[]):
@@ -178,7 +198,10 @@ def check_item(name, item, table_name='students',ignore_keys=[]):
     filter = ''
     for key in item._fields:
         if key in ignore_keys: continue
-        filter += f"{key} = '{getattr(item, key)}' AND "
+        value = getattr(item, key)
+        if isinstance(value, str):
+            value = value.replace("'", "''")  # Escape single quotes
+        filter += f"{key} = '{value}' AND "
     filter = filter[:-5]
     query= create_query(name, table_name, filter=filter)
     cursor.execute(query)
@@ -214,7 +237,8 @@ def get_entry(name, column, value, table_name='students', db_item=None):
         return result
     return db_item(*result[0]) if len(result) > 0 else None
 
-def add_row(name, column, value, table_name='students'):
+def add_row(name, column, value, table_name='students',
+            verbose=False):
     """Add a row to the database by setting the value of a single column
 
     Args:
@@ -222,6 +246,7 @@ def add_row(name, column, value, table_name='students'):
         column (str): the column to update
         value (any): the new value for the column
         table_name (str, optional): the name of the table. Defaults to 'students'.
+        verbose (bool, optional): if True, prints the query. Defaults to False.
     """    
     # Connect to a database
     connection = sqlite3.connect(name)
@@ -230,6 +255,8 @@ def add_row(name, column, value, table_name='students'):
     # Insert the item
     exec_str = f"INSERT INTO {table_name} ({column}) VALUES ("
     exec_str += f"'{value}')" if type(value) == str else f"{value})"
+    if verbose: 
+        print(exec_str)
     cursor.execute(exec_str)
     # Commit the changes
     connection.commit()
@@ -237,7 +264,9 @@ def add_row(name, column, value, table_name='students'):
     connection.close()
     return
 
-def update_db(name, column, value, filter='', table_name='students'):
+
+def update_db(name, column, value, filter='', table_name='students', 
+              verbose=False):
     """Update a column of a database item
 
     Args:
@@ -246,6 +275,7 @@ def update_db(name, column, value, filter='', table_name='students'):
         column (str): the column to update
         value (str): the new value for the column
         table_name (str, optional): the name of the table. Defaults to 'students'.
+        verbose (bool, optional): if True, prints the query. Defaults to False.
     """    
     # Connect to a database
     connection = sqlite3.connect(name)
@@ -254,13 +284,24 @@ def update_db(name, column, value, filter='', table_name='students'):
     # Update the column
     exec_str = f"UPDATE {table_name} SET {column} = "
     exec_str += f"'{value}'" if type(value) == str else f"{value}"
-    if filter!='': exec_str += f" WHERE {filter}"
-    #print(exec_str)
-    cursor.execute(exec_str)
-    # Commit the changes
-    connection.commit()
-    # Close the connection
-    connection.close()
+    if filter!='': 
+        exec_str += f" WHERE {filter}"
+    if verbose:
+        print(exec_str)
+    try:
+        cursor.execute(exec_str)
+        # Check if any rows were affected
+        if cursor.rowcount > 0:
+            print(f"Query successful, {cursor.rowcount} rows affected.")
+        else:
+            print("Query did not affect any rows.")
+        # Commit the changes
+        connection.commit()
+    except sqlite3.Error as e:
+        print(f"An error occurred: {e.args[0]}")
+    finally:
+        # Close the connection
+        connection.close()
     return
 
 def check_column(name, column, table_name='students'):

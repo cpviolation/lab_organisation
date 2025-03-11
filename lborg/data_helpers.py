@@ -5,7 +5,7 @@ from lborg.db import create_database, insert_items, check_column, update_db, cre
 
 
 def add_participants_to_db(json_file, cohort='2023/24',db_name='data/dummy.db', 
-                           update=False, overwrite=False):
+                           update=False, overwrite=False, verbose=False):
     """Add participants to a database
 
     Args:
@@ -14,6 +14,7 @@ def add_participants_to_db(json_file, cohort='2023/24',db_name='data/dummy.db',
         db_name (str, optional): the file name with the database. Defaults to 'data/dummy.db'.
         update (bool, optional): update the database. Defaults to False.
         overwrite (bool, optional): overwrites the database. Defaults to False.
+        verbose (bool, optional): verbose mode. Defaults to False.
 
     Raises:
         ValueError: database already exists and neither update nor overwrite are set
@@ -28,18 +29,18 @@ def add_participants_to_db(json_file, cohort='2023/24',db_name='data/dummy.db',
     if not data:
         raise ValueError(f'No data found in {json_file}')
     # create database
-    if not os.path.exists(db_name) or overwrite: 
+    if not os.path.exists(db_name) or overwrite:
         create_database(db_name, overwrite=overwrite)
     # add participants to database
     students = []
     for student in data[0]:
-        students += [ db_student(student['nome'],
-                                 student['cognome'],
+        students += [ db_student(student['cognome'].replace("'", "''"),
+                                 student['nome'].replace("'", "''"),
                                  student['matricola'],
                                  student['indirizzoemail'],
                                  cohort,
                                  0) ]
-    insert_items(db_name, students, ignore_keys=['gruppo'])
+    insert_items(db_name, students, ignore_keys=['gruppo'], verbose=verbose)
     print(f'Added {len(students)} students from {cohort} cohort to {db_name}')
     return
 
@@ -114,7 +115,7 @@ def create_exams_db(db_name='data/dummy_exams.db',
     return
 
 
-def assign_group(json_file, db_name='data/dummy.db'):
+def assign_group(json_file, db_name='data/dummy.db', verbose=False):
     """Assign groups to participants in database
 
     Args:
@@ -139,13 +140,16 @@ def assign_group(json_file, db_name='data/dummy.db'):
         raise ValueError(f'No data found in {json_file}')
     # update participants group to database
     for student in data[0]:
-        st_item = db_student(student['nome'],
-                             student['cognome'],
+        st_item = db_student(student['nome'].replace("'", "''"),  # Escape single quotes
+                             student['cognome'].replace("'", "''"),  # Escape single quotes
                              student['matricola'] if 'matricola' in student.keys() else None,
                              student['indirizzoemail'] if 'indirizzoemail' in student.keys() else None,
                              None,
-                             0)
-        update_db(db_name, 'gruppo', student['gruppo'],f"cognome = \'{student['cognome']}\' AND nome = \'{student['nome']}\'")
+                             student['gruppo'])
+        if verbose: print(student, st_item)
+        update_db(db_name, 'gruppo', student['gruppo'],
+                  f"cognome = \'{student['cognome'].replace("'", "''")}\' AND nome = \'{student['nome'].replace("'", "''")}\'", 
+                  verbose=verbose)
     return
 
 

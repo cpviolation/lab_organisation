@@ -9,13 +9,14 @@ parser.add_argument('--db_name', type=str, default='data/students.db', help='Dat
 parser.add_argument('--cohort', type=str, default='2023/24', help='Cohort name')
 parser.add_argument('--json_name', type=str, help='Input JSON name', required=True)
 parser.add_argument('--dryrun', action='store_true', help='Dry run')
+parser.add_argument('--verbose', action='store_true', help='Verbose mode')
 args = parser.parse_args()
 
 def main():
     # add "gruppo" column to database
     #add_column(args.db_name, 'gruppo', 'INTEGER', 0)
     # assign group to participants in database
-    assign_group(args.json_name, db_name=args.db_name)
+    assign_group(args.json_name, db_name=args.db_name, verbose=args.verbose)
 
     #print(get_db_columns('test/dummy.db'))
 
