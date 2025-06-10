@@ -87,10 +87,11 @@ def make_signature_table(db_name, cohort, date='', title='Laboratorio I - Turno 
     data = get_groups(cohort, db_name)
     # get tables
     tables = []
-    groups_id_split = int(len(data)/2)
+    group_ids = [ key for key in data.keys() if data[key] ]
+    groups_id_split = int(len(group_ids)/2)
     data_split = {
-        1 : {key: data[key] if key in data.keys() else [] for key in range(1,groups_id_split)},
-        groups_id_split: {key: data[key] if key in data.keys() else [] for key in range(groups_id_split,int(len(data)+1))}
+        1 : {key: data[key] if key in data.keys() else [] for key in group_ids[:groups_id_split]},
+        groups_id_split: {key: data[key] if key in data.keys() else [] for key in group_ids[groups_id_split:]}
     }
     for group_id, data_table in data_split.items():
         filtered_data_table = {key: value for key, value in data_table.items() if value}
