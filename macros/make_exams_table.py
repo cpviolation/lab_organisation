@@ -6,7 +6,9 @@ from lborg.data_helpers import calculate_attendance, int_mark
 from lborg.db_items import db_student, db_exam_results
 
 import argparse
-parser = argparse.ArgumentParser('Exams Table')
+parser = argparse.ArgumentParser('Exams Table\n'+
+                                 'This script creates the exams table.\n'+
+                                 '   $ python $LBORG/macros/make_exams_table.py --ids IDS\n')
 parser.add_argument('--db_name', type=str, default='data/students.db', help='Database name')
 parser.add_argument('--db_exams_name', type=str, default='data/exams.db', help='Exams database name')
 parser.add_argument('--db_attendance_name', type=str, default='data/attendance.db', help='Attendance database name')

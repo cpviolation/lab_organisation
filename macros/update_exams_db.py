@@ -4,7 +4,9 @@ from lborg.data_helpers import create_exams_db, create_query, query_database, up
 from lborg.tables import make_table
 
 import argparse
-parser = argparse.ArgumentParser('Create Attendance Database Options')
+parser = argparse.ArgumentParser('Create Attendance Database Options\n'+
+                                 'This script creates the exams database and updates it with the given JSON files.\n'+
+                                 '   $ python $LBORG/macros/update_exams_db.py --json_exams exams.json --cohort 2024_25\n')
 parser.add_argument('--db_name', type=str, default='data/exams.db', help='Database name')
 parser.add_argument('--students_db_name', type=str, default='data/students.db', help='Database name')
 parser.add_argument('--cohort', type=str, help='Cohort name')

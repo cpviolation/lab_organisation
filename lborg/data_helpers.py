@@ -1,5 +1,8 @@
 import os
 import json
+import pandas as pd
+from datetime import datetime
+from lborg.excel_helpers import get_dates_from_excel_columns, get_attendance_from_excel
 from lborg.db_items import db_student, db_date, db_exam, db_exam_results
 from lborg.db import create_database, insert_items, check_column, update_db, create_query, query_database, check_entry, add_row, get_entry
 
@@ -42,6 +45,39 @@ def add_participants_to_db(json_file, cohort='2023/24',db_name='data/dummy.db',
                                  0) ]
     insert_items(db_name, students, ignore_keys=['gruppo'], verbose=verbose)
     print(f'Added {len(students)} students from {cohort} cohort to {db_name}')
+    return
+
+def create_attendance_db_from_excel(excel_file, db_name='data/dummy.db', 
+                         update=False, overwrite=False):
+    """Add dates to attendance database
+
+    Args:
+        json_file (str): the file name of the json file with participants
+        db_name (str, optional): the file name with the database. Defaults to 'data/dummy.db'.
+        update (bool, optional): update the database. Defaults to False.
+        overwrite (bool, optional): overwrites the database. Defaults to False.
+
+    Raises:
+        ValueError: database already exists and neither update nor overwrite are set
+        ValueError: no data is found in the json file
+    """    
+    # check if database exists
+    if os.path.exists(db_name) and not (update or overwrite):
+        raise ValueError(f'Database {db_name} already exists! Use `update` to update it')
+    # load participants
+    data = pd.read_excel(excel_file)
+    if data is None or data.empty:
+        raise ValueError(f'No data found in {excel_file}')
+    # extract dates from the dataframe
+    dates = get_dates_from_excel_columns(data.keys())
+    # create database
+    if not os.path.exists(db_name) or overwrite: 
+        db_columns = {'matricola':'integer'}
+        for date in dates.keys():
+            db_columns[date] = 'boolean'
+        create_database(db_name, 'attendance', db_columns, overwrite=overwrite)
+    # Message   
+    print(f'Created attendance database in {db_name}')
     return
 
 
@@ -382,6 +418,29 @@ def update_attendance_db(json_file, db_students_name, db_attendance_name):
     """    
     data = json.load(open(json_file))
     for date, students in data.items():
+        for student in students:
+            query = create_query(db_students_name, columns=['cognome','nome','matricola'], filter=f'cognome = "{student["cognome"]}" AND nome = "{student["nome"]}"')
+            result, description = query_database(db_students_name,query)
+            if not result: continue
+            # add student to attendance database if not present
+            if not check_entry(db_attendance_name, 'matricola', result[0][2], 'attendance'):
+                add_row(db_attendance_name, 'matricola', result[0][2], 'attendance')
+            update_db(db_attendance_name, date, student['presente']==1, filter=f'matricola = {result[0][2]}', table_name='attendance')
+    return
+
+def update_attendance_db_from_excel(excel_file, db_students_name, db_attendance_name):
+    """Updates the attendance database with the data from a json file
+
+    Args:
+        excel_file (str): the excel file name with attendance data
+        db_students_name (str): the file name of the database with students
+        db_attendance_name (str): the file name of the database with attendance
+    """
+    data = pd.read_excel(excel_file)
+    if data is None or data.empty:
+        raise ValueError(f'No data found in {excel_file}')
+    attendance_data = get_attendance_from_excel(data)
+    for date, students in attendance_data.items():
         for student in students:
             query = create_query(db_students_name, columns=['cognome','nome','matricola'], filter=f'cognome = "{student["cognome"]}" AND nome = "{student["nome"]}"')
             result, description = query_database(db_students_name,query)
