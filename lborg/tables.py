@@ -168,10 +168,10 @@ def make_attendance_table(db_name, cohort, output_dir='pdfs'):
         table = table.replace(' 1 ',' P ')
         table = table.replace(' 0 ',' A ')
         table = table.replace(' - ',' 0 ')
-        table = table.replace(' 2024-', ' ')
+        table = table.replace(f' 20{cohort[-2:]}-', ' ')
         tables += [table]
     # create latex table
-    latex = get_latex_tables(tables,lhead='Laboratorio I - Turno Beta',rhead='2023/24', landscape=True)
+    latex = get_latex_tables(tables,lhead='Laboratorio I - Turno Beta',rhead=cohort.replace('_','/'), landscape=True)
 
     print(table)
 
