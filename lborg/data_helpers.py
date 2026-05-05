@@ -358,7 +358,7 @@ def update_exams_entry(matricola, mark, db_exams_name, date, exam_type, force=Fa
         old_mark = old_entry.__getattribute__(exam_type)
         print(f'Warning: {matricola} already has a {exam_type} mark from a different date!'+
               f' ({old_date}({old_mark}) vs {date}({mark}))')
-        if int_mark(mark) <= int_mark(old_mark) and not force: 
+        if not exam_type == 'reports' and int_mark(mark) <= int_mark(old_mark) and not force: 
             return
         print('Forcing update...')
     if exam_type == 'reports':

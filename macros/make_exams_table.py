@@ -11,7 +11,11 @@ parser = argparse.ArgumentParser('Exams Table\n'+
                                  '   $ python $LBORG/macros/make_exams_table.py --ids IDS\n')
 parser.add_argument('--db_name', type=str, default='data/students.db', help='Database name')
 parser.add_argument('--db_exams_name', type=str, default='data/exams.db', help='Exams database name')
-parser.add_argument('--db_attendance_name', type=str, default='data/attendance.db', help='Attendance database name')
+parser.add_argument('--db_attendance_name',
+                    type=str,
+                    default='data/attendance.db',
+                    help='Attendance database name')
+parser.add_argument('--minimum_attendance', type=float, default=0.75, help='Minimum attendance required')
 parser.add_argument('--ids', type=int, default=None, nargs='+', help='Student id number',required=True)
 parser.add_argument('--order', type=str, default='gruppo', help='Order')
 parser.add_argument('--dryrun', action='store_true', help='Dry run')
@@ -46,10 +50,10 @@ def check_attendance_db(data):
     for d in data:
         #student = db_student(*d)
         student = db_student_plus_exam(*d)
-        attendance = calculate_attendance(args.db_attendance_name, 
+        attendance = calculate_attendance(args.db_attendance_name,
                                           f'data/dates_{student.coorte.replace("/","_")}.db',
                                           student.matricola)
-        if attendance[student.matricola] > 0.75:
+        if attendance[student.matricola] >= args.minimum_attendance:
             valid_students.append(student._replace(attendance=attendance[student.matricola]))
         else:
             print(f'Student {student.nome} {student.cognome} has an attendance of {student.attendance*100:.0f}% and is not added to the list')
