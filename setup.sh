@@ -14,7 +14,7 @@ if [ ! -d "$VENV_DIR" ]; then
     source "$VENV_DIR/bin/activate"
     
     pip install --upgrade pip
-    pip install -r "$PROJECT_ROOT/requirements.txt"
+    pip install -e "$PROJECT_ROOT[dev]"
     
     set +e  # Disable strict error checking after installation is successful
 else

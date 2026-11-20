@@ -1,0 +1,7 @@
+[[
+ {"nome": "Eric", "cognome": "Clapton", "matricola": "100001", "indirizzoemail": "e.clapton@example.org"},
+ {"nome": "Ginger", "cognome": "Baker", "matricola": "100002", "indirizzoemail": "g.baker@example.org"},
+ {"nome": "Jack", "cognome": "Bruce", "matricola": "100003", "indirizzoemail": "j.bruce@example.org"},
+ {"nome": "Pino", "cognome": "D'Angelo", "matricola": "100004", "indirizzoemail": "p.dangelo@example.org"},
+ {"nome": "Nicolò", "cognome": "Rossi", "matricola": "100005", "indirizzoemail": "n.rossi@example.org"}
+]]

@@ -1,5 +1,6 @@
-tabulate
-numpy
+typer
+jinja2
 pandas
 openpyxl
-streamlit
+tabulate
+numpy  # used by the legacy lborg package

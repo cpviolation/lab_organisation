@@ -1,0 +1,31 @@
+\documentclass[12pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage[margin=2cm,headsep=0.8cm]{geometry}
+\usepackage{fancyhdr}
+\renewcommand{\arraystretch}{1.6}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{<< title|tex >>}
+\rhead{<< date|tex >>}
+\cfoot{\thepage}
+
+\begin{document}
+<% for table in tables %>
+\noindent
+\begin{tabularx}{\textwidth}{|r|l|X|}
+\hline
+\textbf{Gruppo} & \textbf{Studente} & \textbf{Firma} \\
+\hline
+<% for group, students in table %>
+<% for s in students %>
+<% if loop.first %>\multirow{<< students|length >>}{*}{<< group if group is not none else '--' >>}<% endif %> & << s.surname|tex >> << s.name|tex >> & \\
+<% if loop.last %>\hline<% else %>\cline{2-3}<% endif %>
+<% endfor %>
+<% endfor %>
+\end{tabularx}
+<% if not loop.last %>\newpage<% endif %>
+<% endfor %>
+\end{document}

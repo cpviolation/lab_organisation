@@ -1,0 +1,8 @@
+[[
+ {"nome": "Eric", "cognome": "Clapton", "gruppo": "1"},
+ {"nome": "Ginger", "cognome": "Baker", "gruppo": 2},
+ {"nome": "Jack", "cognome": "Bruce", "gruppo": "1"},
+ {"nome": "Pino", "cognome": "D’ANGELO", "gruppo": "2"},
+ {"matricola": "100005", "gruppo": "3"},
+ {"nome": "Nobody", "cognome": "Unknown", "gruppo": "3"}
+]]

@@ -1,0 +1,4 @@
+[[
+ {"nome": "Eric", "cognome": "Clapton", "matricola": "090001", "indirizzoemail": "other.clapton@example.org"},
+ {"nome": "Jack", "cognome": "Bruce", "matricola": "100003", "indirizzoemail": "j.bruce@example.org"}
+]]
