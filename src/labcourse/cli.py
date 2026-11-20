@@ -23,9 +23,11 @@ sessions_app = typer.Typer(help="Lesson dates and hours.", no_args_is_help=True)
 attendance_app = typer.Typer(help="Attendance records and reports.", no_args_is_help=True)
 sheet_app = typer.Typer(help="Printable sheets.", no_args_is_help=True)
 exams_app = typer.Typer(help="Exam results and eligibility.", no_args_is_help=True)
+appelli_app = typer.Typer(help="Written appelli: registered students, marks, summary and oral sheets.",
+                          no_args_is_help=True)
 for name, sub in (("cohort", cohort_app), ("students", students_app), ("groups", groups_app),
                   ("sessions", sessions_app), ("attendance", attendance_app), ("sheet", sheet_app),
-                  ("exams", exams_app)):
+                  ("exams", exams_app), ("appelli", appelli_app)):
     app.add_typer(sub, name=name)
 
 
@@ -424,6 +426,142 @@ def exams_eligible(
     typer.echo(f"\n{sum(r.eligible for r in rows)} of {len(rows)} students admitted to the oral.")
 
 
+# ---------------------------------------------------------------- appelli
+
+def resolve_appello(conn: sqlite3.Connection, date: Optional[str]) -> str:
+    """ISO date of the appello: the one given, or the most recent stored."""
+    if date:
+        try:
+            iso = importers.parse_date(date)
+        except ValueError as e:
+            fail(str(e))
+        try:
+            repo.appello_id(conn, iso)
+        except LookupError:
+            known = ", ".join(r["date"] for r in repo.list_appelli(conn)) or "none"
+            fail(f"no appello on {iso} (appelli: {known})")
+        return iso
+    rows = repo.list_appelli(conn)
+    if not rows:
+        fail("no appello yet: use `lab appelli import` or `lab appelli add`")
+    return rows[-1]["date"]
+
+
+DateOpt = typer.Option(None, "--date", "-d", help="Appello date (default: the most recent).")
+
+
+@appelli_app.command("import")
+def appelli_import(
+    file: Path = typer.Argument(..., exists=True,
+                                help="Esse3/e-learning list (XLSX, XLS, CSV) or written results JSON."),
+    date: Optional[str] = typer.Option(None, "--date", "-d",
+                                       help="Appello date (lists: if not found in the file; JSON: only this date)."),
+    sheet: Optional[str] = typer.Option(None, "--sheet", help="Excel sheet (default: the first)."),
+    dry_run: bool = DryRunOpt, verbose: bool = VerboseOpt, strict: bool = StrictOpt,
+) -> None:
+    """Register students for an appello and record their marks.
+
+    Rows without a mark only register the student. Marks of students in the database
+    are also stored as written results (so they count for admission to the oral);
+    students who are not in the database are kept in the appello list.
+    """
+    run_import(lambda conn: importers.import_appello(conn, file, date, sheet), dry_run, verbose, strict)
+
+
+@appelli_app.command("list")
+def appelli_list() -> None:
+    """Appelli with number of registered students and of marks."""
+    conn = open_db()
+    rows = repo.list_appelli(conn)
+    render.print_table([{"data": r["date"], "iscritti": r["iscritti"], "con voto": r["con_voto"]} for r in rows])
+
+
+@appelli_app.command("add")
+def appelli_add(
+    date: str = typer.Option(..., "--date", "-d", help="Appello date (created if new)."),
+    matricola: list[str] = typer.Option(..., "--matricola", "-m",
+                                        help="Student id(s): -m 100001 100002 or -m 100001,100002."),
+    dry_run: bool = DryRunOpt, verbose: bool = VerboseOpt,
+) -> None:
+    """Register students for an appello by hand."""
+    try:
+        iso = importers.parse_date(date)
+    except ValueError as e:
+        fail(str(e))
+
+    def fn(conn):
+        rep = ImportReport(f"Appello {iso}")
+        try:
+            aid = repo.appello_id(conn, iso)
+        except LookupError:
+            aid = repo.appello_id(conn, iso, create=True)
+            rep.count("new appello")
+        for m in split_ids(matricola):
+            outcome, _ = repo.upsert_registration(conn, aid, m)
+            rep.count("registered" if outcome == "new" else "already registered")
+            if repo.student_by_matricola(conn, m) is None:
+                rep.problem(f"matricola {m} is not in the database (registered anyway)")
+        return rep
+
+    run_import(fn, dry_run, verbose)
+
+
+@appelli_app.command("remove")
+def appelli_remove(
+    date: str = typer.Option(..., "--date", "-d"),
+    matricola: list[str] = typer.Option(..., "--matricola", "-m"),
+    dry_run: bool = DryRunOpt,
+) -> None:
+    """Remove students from an appello."""
+    def fn(conn):
+        iso = importers.parse_date(date)
+        aid = repo.appello_id(conn, iso)
+        rep = ImportReport(f"Appello {iso}")
+        for m in split_ids(matricola):
+            if repo.remove_registration(conn, aid, m):
+                rep.count("removed")
+            else:
+                rep.problem(f"matricola {m} is not registered")
+        return rep
+
+    run_import(fn, dry_run, verbose=True)
+
+
+@appelli_app.command("show")
+def appelli_show(
+    date: Optional[str] = DateOpt,
+    oral: bool = typer.Option(False, "--oral", help="Oral exam sheet: admitted students only, with empty Orale/Note columns."),
+    show_all: bool = typer.Option(True, "--all/--admitted", help="All registered students (default) or only those admitted."),
+    fmt: str = typer.Option("table", "--format", "-f", help="table, pdf, csv or xlsx"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Appello summary (registered students, marks, admission) or oral exam sheet."""
+    cfg = state.cfg
+    conn = open_db()
+    iso = resolve_appello(conn, date)
+    rows = analysis.appello_table(conn, cfg, iso)
+    admitted = [r for r in rows if r.eligible]
+    shown = admitted if (oral or not show_all) else rows
+    stem = f"{iso}_{'orali' if oral else 'appello'}"
+    unknown = [r.matricola for r in rows if r.exam is None]
+    if unknown:
+        typer.secho(f"Warning: not in the database: {', '.join(unknown)}", fg=typer.colors.YELLOW, err=True)
+    if fmt == "pdf":
+        if not shown:
+            fail("no student to print")
+        tex = render.appello_tex(shown, cfg.title, iso, cfg.rows_per_table, oral=oral)
+        try:
+            target = output_path("pdf", stem, output).resolve()
+            pdf = render.compile_pdf(tex, target.parent, target.stem)
+        except RuntimeError as e:
+            fail(str(e))
+        typer.echo(f"Written {pdf}")
+    else:
+        emit(render.appello_records(shown), fmt, stem, output)
+    typer.echo(f"\nAppello {iso}: {len(rows)} registered, {sum(bool(r.appello_mark) for r in rows)} with a mark, "
+               f"{len(admitted)} admitted to the oral.")
+
+
 # ---------------------------------------------------------------- legacy
 
 @app.command("migrate-legacy")
@@ -449,6 +587,33 @@ def migrate_legacy_cmd(
         lambda conn: legacy.migrate_legacy(conn, state.cfg, students, attendance, dates_map, exams, hours),
         dry_run, verbose, strict,
     )
+
+
+@app.command("gui")
+def gui_cmd(
+    port: int = typer.Option(8501, help="Port for the web interface."),
+    browser: bool = typer.Option(True, help="Open the browser automatically."),
+) -> None:
+    """Open the graphical interface in the browser."""
+    import os
+    import subprocess
+    import sys
+    from importlib.util import find_spec
+
+    if find_spec("streamlit") is None:
+        fail("the GUI needs streamlit: pip install -e '.[gui]'")
+    if not state.config_path.exists():
+        fail(f"{state.config_path} not found. Run `lab init` or pass --config.")
+    script = Path(__file__).with_name("gui.py")
+    env = {**os.environ, "LAB_CONFIG": str(state.config_path.resolve())}
+    cmd = [sys.executable, "-m", "streamlit", "run", str(script), "--server.port", str(port),
+           "--server.headless", "false" if browser else "true", "--browser.gatherUsageStats", "false",
+           "--client.toolbarMode", "minimal"]
+    typer.echo(f"GUI on http://localhost:{port}  (Ctrl+C to stop)")
+    try:
+        subprocess.run(cmd, env=env, check=False)
+    except KeyboardInterrupt:
+        pass
 
 
 @app.command("backup")

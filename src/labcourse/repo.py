@@ -314,3 +314,87 @@ def list_assessments(conn: sqlite3.Connection, cohort: int) -> list[sqlite3.Row]
         "GROUP BY a.id ORDER BY a.date, a.kind, a.label",
         (cohort,),
     ).fetchall()
+
+
+# ---------------------------------------------------------------- appelli and registrations
+
+@dataclass(frozen=True)
+class Registration:
+    matricola: str
+    surname: str | None
+    name: str | None
+    email: str | None
+    mark: str | None
+
+
+def appello_id(conn: sqlite3.Connection, date: str, kind: str = "written", create: bool = False) -> int:
+    row = conn.execute("SELECT id FROM appello WHERE kind = ? AND date = ?", (kind, date)).fetchone()
+    if row:
+        return row["id"]
+    if not create:
+        raise LookupError(f"No {kind} appello on {date}")
+    return conn.execute("INSERT INTO appello (kind, date) VALUES (?, ?)", (kind, date)).lastrowid
+
+
+def list_appelli(conn: sqlite3.Connection, kind: str = "written") -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT a.date, COUNT(r.matricola) AS iscritti, COUNT(r.mark) AS con_voto "
+        "FROM appello a LEFT JOIN registration r ON r.appello_id = a.id WHERE a.kind = ? "
+        "GROUP BY a.id ORDER BY a.date",
+        (kind,),
+    ).fetchall()
+
+
+def upsert_registration(
+    conn: sqlite3.Connection, appello: int, matricola: str, surname: str | None = None,
+    name: str | None = None, email: str | None = None, mark: str | None = None,
+) -> tuple[str, str | None]:
+    """Register a student for an appello (or update the row). Returns (outcome, previous mark).
+
+    Missing values never overwrite stored ones.
+    """
+    row = conn.execute(
+        "SELECT surname, name, email, mark FROM registration WHERE appello_id = ? AND matricola = ?",
+        (appello, matricola),
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO registration (appello_id, matricola, surname, name, email, mark) VALUES (?, ?, ?, ?, ?, ?)",
+            (appello, matricola, surname, name, email, mark),
+        )
+        return "new", None
+    new = {"surname": surname, "name": name, "email": email, "mark": mark}
+    changed = {k: v for k, v in new.items() if v is not None and v != row[k]}
+    if not changed:
+        return "same", row["mark"]
+    sets = ", ".join(f"{k} = ?" for k in changed)  # keys are fixed column names
+    conn.execute(f"UPDATE registration SET {sets} WHERE appello_id = ? AND matricola = ?",
+                 (*changed.values(), appello, matricola))
+    return "updated", row["mark"]
+
+
+def remove_registration(conn: sqlite3.Connection, appello: int, matricola: str) -> bool:
+    return conn.execute(
+        "DELETE FROM registration WHERE appello_id = ? AND matricola = ?", (appello, matricola)
+    ).rowcount == 1
+
+
+def registrations(conn: sqlite3.Connection, appello: int) -> list[Registration]:
+    """Registered students; names come from the student table when the student is known."""
+    rows = conn.execute(
+        "SELECT r.matricola, COALESCE(s.surname, r.surname) AS surname, COALESCE(s.name, r.name) AS name, "
+        "COALESCE(s.email, r.email) AS email, r.mark FROM registration r "
+        "LEFT JOIN student s ON s.matricola = r.matricola WHERE r.appello_id = ? "
+        "ORDER BY COALESCE(s.surname, r.surname) COLLATE NOCASE, COALESCE(s.name, r.name) COLLATE NOCASE, r.matricola",
+        (appello,),
+    ).fetchall()
+    return [Registration(**r) for r in rows]
+
+
+def latest_cohort(conn: sqlite3.Connection, matricola: str) -> str | None:
+    row = conn.execute(
+        "SELECT c.name FROM student s JOIN enrolment e ON e.student_id = s.id JOIN cohort c ON c.id = e.cohort_id "
+        "WHERE s.matricola = ? ORDER BY c.name DESC LIMIT 1",
+        (matricola,),
+    ).fetchone()
+    return row["name"] if row else None

@@ -69,9 +69,25 @@ lab exams eligible --format xlsx          # for the department office
 lab exams eligible -m 100001 100002       # only these students, searched in every cohort
 lab exams eligible --cohort all           # every cohort (ids not found are reported as warnings)
 
+# written appelli: registered students and their marks
+lab appelli import data/raw/iscritti_esse3.xlsx          # Esse3/e-learning list (XLSX, XLS, CSV), with or
+lab appelli import data/raw/exams_20261117.json          #   without marks, or the results JSON
+lab appelli add --date 2026-11-17 -m 100001 100002       # register by hand (also `lab appelli remove`)
+lab appelli list
+lab appelli show                                         # summary of the latest appello (-d for another)
+lab appelli show -f pdf                                  # printable summary
+lab appelli show --oral -f pdf                           # oral exam sheet: admitted students only
+
 lab students search --surname dangelo
 lab students list --format csv
 ```
+
+An appello keeps every registered student, also those who are not in the database
+(other turni or years): their name and mark come from the imported list. Marks of
+students in the database are also stored as written results, so they count for the
+admission to the oral. In an Esse3 export the header row is found automatically and
+words such as *Assente*, *Ritirato*, *Respinto* and *30 e lode* are understood; the appello
+date is taken from the title block or the file name, or given with `--date`.
 
 Marks are stored as written: numbers 0–30, `30L` (cum laude), `A` (absent), `R` (withdrawn),
 `I` (insufficient). Every exam sitting is kept; `exams.written_policy` decides whether the best or the
@@ -80,6 +96,22 @@ group change does not alter grades already earned.
 
 Attendance fraction = hours attended (codes in `present_codes`) / hours of the sessions held so far,
 with the denominator capped at `max_counted_hours`.
+
+## Graphical interface
+
+```bash
+lab gui
+```
+
+opens the browser on a local page (http://localhost:8501) with the same functions as the command
+line: student lists and search across cohorts, imports with preview (nothing is written until you
+press *Importa*; a backup is made first), lessons, attendance with the students below the minimum
+highlighted, signature sheets and attendance PDFs, students admitted to the oral, appelli, and CSV/Excel
+downloads. The *Statistiche* page shows mark distributions per cohort, results per appello (also
+against the time since the end of the lessons), correlations between written, oral, reports and
+attendance, and how long students wait before the written and the oral exam; the same numbers are
+available in Python from `labcourse.stats`. It reads `course.toml` from the current folder (or `-c`/`LAB_CONFIG`). Stop it with
+Ctrl+C. It needs `streamlit`, installed by `setup.sh` or `pip install -e '.[gui]'`.
 
 ## Migrating from the old scripts
 

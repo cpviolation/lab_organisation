@@ -59,6 +59,26 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (assessment_id, student_id)
     );
     """,
+    # 2: exam sessions (appelli) and the students registered for them.
+    # Registrations are keyed by matricola so that students who are not in the
+    # database (other turni, other years) can be registered too.
+    """
+    CREATE TABLE appello (
+        id   INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL DEFAULT 'written' CHECK (kind IN ('written','oral')),
+        date TEXT NOT NULL,
+        UNIQUE (kind, date)
+    );
+    CREATE TABLE registration (
+        appello_id INTEGER NOT NULL REFERENCES appello(id) ON DELETE CASCADE,
+        matricola  TEXT NOT NULL,
+        surname    TEXT,
+        name       TEXT,
+        email      TEXT,
+        mark       TEXT,
+        PRIMARY KEY (appello_id, matricola)
+    );
+    """,
 ]
 
 

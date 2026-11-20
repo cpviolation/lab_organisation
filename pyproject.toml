@@ -14,11 +14,13 @@ dependencies = [
     "jinja2>=3.1",
     "pandas>=2.0",
     "openpyxl>=3.1",
+    "python-calamine>=0.2",   # .xls files
     "tabulate>=0.9",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+gui = ["streamlit>=1.40"]
 
 [project.scripts]
 lab = "labcourse.cli:run"
