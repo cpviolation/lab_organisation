@@ -252,10 +252,11 @@ def groups_show(
 def sessions_add(
     file: Path = typer.Argument(..., exists=True, help='JSON {"2025-10-01": 4, ...} or CSV/XLSX with date, hours.'),
     cohort: Optional[str] = CohortOpt, dry_run: bool = DryRunOpt, verbose: bool = VerboseOpt,
+    strict: bool = StrictOpt,
 ) -> None:
     """Add (or update the hours of) lesson dates."""
     c = resolve_cohort(cohort)
-    run_import(lambda conn: importers.import_sessions(conn, file, c), dry_run, verbose)
+    run_import(lambda conn: importers.import_sessions(conn, file, c), dry_run, verbose, strict)
 
 
 @sessions_app.command("list")
@@ -267,11 +268,12 @@ def sessions_list(cohort: Optional[str] = CohortOpt) -> None:
         cid = repo.cohort_id(conn, c)
     except LookupError as e:
         fail(str(e))
+    present_codes = state.cfg.attendance.present_codes
     rows = conn.execute(
         "SELECT s.date AS data, s.hours AS ore, COUNT(a.student_id) AS registrati, "
-        "SUM(a.status IN ('P','R','G')) AS presenti FROM session s "
+        f"SUM(a.status IN ({','.join('?' for _ in present_codes)})) AS presenti FROM session s "
         "LEFT JOIN attendance a ON a.session_id = s.id WHERE s.cohort_id = ? GROUP BY s.id ORDER BY s.date",
-        (cid,),
+        (*present_codes, cid),
     ).fetchall()
     render.print_table([dict(r) for r in rows])
     total = sum(r["ore"] for r in rows)
@@ -310,7 +312,8 @@ def attendance_report(
     if fmt == "pdf":
         tex = render.attendance_tex(sessions, rows, cfg.title, c, cfg.attendance.min_fraction, cfg.rows_per_table)
         try:
-            pdf = render.compile_pdf(tex, cfg.output_dir, f"{slug(c)}_attendance")
+            target = output_path("pdf", f"{slug(c)}_attendance", output).resolve()
+            pdf = render.compile_pdf(tex, target.parent, target.stem)
         except RuntimeError as e:
             fail(str(e))
         typer.echo(f"Written {pdf}")
@@ -417,8 +420,7 @@ def exams_eligible(
     for w in warnings:
         typer.secho(f"Warning: {w}", fg=typer.colors.YELLOW, err=True)
     shown = rows if (show_all or matricola) else [r for r in rows if r.eligible]
-    if shown:
-        emit(render.exam_records(shown, with_cohort=len(cohorts) > 1), fmt, stem, output)
+    emit(render.exam_records(shown, with_cohort=len(cohorts) > 1), fmt, stem, output)
     typer.echo(f"\n{sum(r.eligible for r in rows)} of {len(rows)} students admitted to the oral.")
 
 

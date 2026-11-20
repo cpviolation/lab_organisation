@@ -200,7 +200,10 @@ def import_groups(conn: sqlite3.Connection, path: str | Path, cohort_name: str) 
     for i, rec in enumerate(load_records(path), start=1):
         group_raw = _first(rec, "gruppo", "group", "lab_group")
         try:
-            group = int(float(group_raw))
+            number = float(group_raw)
+            if not math.isfinite(number) or not number.is_integer():
+                raise ValueError("group must be an integer")
+            group = int(number)
         except (TypeError, ValueError):
             rep.problem(f"row {i}: invalid group {group_raw!r}")
             continue
@@ -317,7 +320,7 @@ def read_attendance_excel(path: str | Path, cfg: Config) -> tuple[list[Attendanc
     import pandas as pd
 
     fmt = cfg.excel
-    df = pd.read_excel(path)
+    df = pd.read_excel(path, dtype={fmt.matricola_column: str} if fmt.matricola_column else None)
     if df.empty:
         raise ValueError(f"No data found in {path}")
     for col in (fmt.name_column, fmt.surname_column):

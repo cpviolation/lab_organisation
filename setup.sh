@@ -19,6 +19,7 @@ if [ ! -d "$VENV_DIR" ]; then
     set +e  # Disable strict error checking after installation is successful
 else
     source "$VENV_DIR/bin/activate"
+    pip install -e "$PROJECT_ROOT[dev]"
 fi
 
 export VIRTUAL_ENV="$VENV_DIR"
