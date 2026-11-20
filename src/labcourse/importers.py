@@ -150,7 +150,8 @@ def load_records(path: str | Path) -> list[dict]:
 
 def _excel_engine(path: str | Path) -> str | None:
     """openpyxl for .xlsx (pandas' current default, kept explicit); default engine otherwise."""
-    return "openpyxl" if Path(path).suffix.lower() == ".xlsx" else None
+    suffix = Path(path).suffix.lower()
+    return "openpyxl" if suffix == ".xlsx" else ("calamine" if suffix == ".xls" else None)
 
 
 def _first(rec: dict, *keys: str) -> Any:

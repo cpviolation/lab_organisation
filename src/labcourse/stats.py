@@ -61,6 +61,8 @@ def results_frame(conn: sqlite3.Connection, cfg: Config, cohorts: list[str] | No
             passed = [(d, m) for d, m in sat if m.is_pass(cfg.exams.written_pass)]
             # the written exam that led to the oral: best passing one (or the latest sat)
             if passed:
+            # the written exam that counts, according to the configured policy
+            if passed and cfg.exams.written_policy == "best":
                 w_date, w_mark = max(passed, key=lambda dm: (_value(dm[1]) or 0, dm[0]))
             elif sat:
                 w_date, w_mark = max(sat, key=lambda dm: dm[0])
