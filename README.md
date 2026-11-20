@@ -106,8 +106,11 @@ lab gui
 opens the browser on a local page (http://localhost:8501) with the same functions as the command
 line: student lists and search across cohorts, imports with preview (nothing is written until you
 press *Importa*; a backup is made first), lessons, attendance with the students below the minimum
-highlighted, signature sheets and attendance PDFs, students admitted to the oral, and CSV/Excel
-downloads. It reads `course.toml` from the current folder (or `-c`/`LAB_CONFIG`). Stop it with
+highlighted, signature sheets and attendance PDFs, students admitted to the oral, appelli, and CSV/Excel
+downloads. The *Statistiche* page shows mark distributions per cohort, results per appello (also
+against the time since the end of the lessons), correlations between written, oral, reports and
+attendance, and how long students wait before the written and the oral exam; the same numbers are
+available in Python from `labcourse.stats`. It reads `course.toml` from the current folder (or `-c`/`LAB_CONFIG`). Stop it with
 Ctrl+C. It needs `streamlit`, installed by `setup.sh` or `pip install -e '.[gui]'`.
 
 ## Migrating from the old scripts

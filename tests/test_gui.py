@@ -20,7 +20,7 @@ def test_every_page_renders(course, monkeypatch, tmp_path):
     at = AppTest.from_file(GUI, default_timeout=30).run()
     assert not at.exception
     pages = at.sidebar.radio[0].options
-    assert len(pages) == 8
+    assert len(pages) == 9
     for page in pages:
         at.sidebar.radio[0].set_value(page).run()
         assert not at.exception, (page, at.exception)

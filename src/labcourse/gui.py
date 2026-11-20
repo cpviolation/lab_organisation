@@ -541,6 +541,155 @@ def _appello_import_form(cfg: Config, upload, path: Path) -> None:
             st.caption("Vai alla scheda *Iscritti e riepilogo* per vedere l'appello.")
 
 
+COHORT_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
+
+
+def _cohort_scale(all_cohorts: list[str]):
+    """Fixed colour per cohort (by its position among all cohorts), so a filter never repaints."""
+    import altair as alt
+
+    return alt.Scale(domain=all_cohorts, range=COHORT_COLORS[:len(all_cohorts)] or COHORT_COLORS[:1])
+
+
+def page_stats(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
+    import altair as alt
+
+    from labcourse import stats
+
+    st.header("Statistiche")
+    all_cohorts = repo.list_cohorts(conn)
+    if not all_cohorts:
+        st.info("Nessun dato.")
+        return
+    chosen = st.multiselect("Coorti", all_cohorts, default=all_cohorts)
+    if not chosen:
+        return
+    df = stats.results_frame(conn, cfg, chosen)
+    color = alt.Color("cohort:N", title="Coorte", scale=_cohort_scale(all_cohorts))
+    tab_dist, tab_app, tab_corr, tab_time = st.tabs(["Distribuzioni", "Appelli", "Correlazioni", "Tempi"])
+
+    with tab_dist:
+        st.dataframe(stats.summary(df), hide_index=True, width="stretch")
+        st.caption("Scritto: voto con cui lo studente è stato ammesso (il migliore superato). 30L conta 30. "
+                   "Relazioni: punti medi per esperienza.")
+        measure = st.radio("Prova", ["written", "oral", "report_mean"], horizontal=True,
+                           format_func={"written": "Scritto", "oral": "Orale", "report_mean": "Relazioni"}.get)
+        sub = df[["cohort", measure]].dropna()
+        if measure == "report_mean":
+            sub = sub.assign(**{measure: sub[measure].round()})
+        counts = sub.groupby(["cohort", measure]).size().reset_index(name="studenti")
+        chart = alt.Chart(counts).mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
+            x=alt.X(f"{measure}:O", title="Voto" if measure != "report_mean" else "Punti medi (arrotondati)"),
+            xOffset="cohort:N",
+            y=alt.Y("studenti:Q", title="Studenti"),
+            color=color,
+            tooltip=[alt.Tooltip("cohort:N", title="Coorte"), alt.Tooltip(f"{measure}:O", title="Voto"),
+                     alt.Tooltip("studenti:Q", title="Studenti")],
+        ).properties(height=320)
+        st.altair_chart(chart, width="stretch")
+
+    with tab_app:
+        ap = stats.appelli_frame(conn, cfg, chosen)
+        if ap.empty:
+            st.info("Nessuno scritto registrato.")
+        else:
+            st.caption("Ogni punto è un appello scritto per una coorte; asse x: giorni dalla fine delle lezioni "
+                       "di quella coorte (negativo = prima della fine). La dimensione è il numero di presenti.")
+            base = alt.Chart(ap.dropna(subset=["days_after_lessons"])).encode(
+                x=alt.X("days_after_lessons:Q", title="Giorni dalla fine delle lezioni"),
+                color=color,
+                tooltip=[alt.Tooltip("date:N", title="Appello"), alt.Tooltip("cohort:N", title="Coorte"),
+                         alt.Tooltip("sat:Q", title="Presenti"), alt.Tooltip("passed:Q", title="Superati"),
+                         alt.Tooltip("pass_rate:Q", title="% superati", format=".0%"),
+                         alt.Tooltip("mean:Q", title="Media", format=".1f")],
+            )
+            c1, c2 = st.columns(2)
+            c1.altair_chart(base.mark_circle(opacity=0.85, stroke="white", strokeWidth=2).encode(
+                y=alt.Y("mean:Q", title="Voto medio", scale=alt.Scale(domain=[18, 30])),
+                size=alt.Size("sat:Q", title="Presenti", scale=alt.Scale(range=[60, 600])),
+            ).properties(height=300, title="Voto medio per appello"), width="stretch")
+            c2.altair_chart(base.mark_circle(opacity=0.85, stroke="white", strokeWidth=2).encode(
+                y=alt.Y("pass_rate:Q", title="% superati", axis=alt.Axis(format="%"), scale=alt.Scale(domain=[0, 1])),
+                size=alt.Size("sat:Q", title="Presenti", scale=alt.Scale(range=[60, 600])),
+            ).properties(height=300, title="Percentuale di superati"), width="stretch")
+            table = ap.assign(pass_rate=(ap["pass_rate"] * 100).round(0), mean=ap["mean"].round(1),
+                              mean_passed=ap["mean_passed"].round(1))
+            st.dataframe(table.rename(columns={
+                "date": "appello", "cohort": "coorte", "registered": "voti registrati", "sat": "presenti",
+                "absent": "assenti", "withdrawn": "ritirati", "passed": "superati", "pass_rate": "% superati",
+                "mean": "media", "mean_passed": "media superati", "days_after_lessons": "giorni dopo le lezioni"}),
+                hide_index=True, width="stretch")
+
+    with tab_corr:
+        st.dataframe(stats.correlations(df), hide_index=True, width="stretch")
+        st.caption("rho di Spearman: +1 = stesso ordinamento, 0 = nessuna relazione, −1 = ordinamento opposto. "
+                   "Con meno di 5 studenti non viene calcolato.")
+        options = {"Scritto ↔ Orale": ("written", "oral"), "Relazioni ↔ Orale": ("report_mean", "oral"),
+                   "Relazioni ↔ Scritto": ("report_mean", "written"), "Presenze ↔ Orale": ("attendance", "oral"),
+                   "Presenze ↔ Scritto": ("attendance", "written")}
+        label = st.selectbox("Grafico", list(options))
+        xcol, ycol = options[label]
+        names = {"written": "Scritto", "oral": "Orale", "report_mean": "Relazioni (punti medi)", "attendance": "Presenze"}
+        pts = df[["cohort", xcol, ycol]].dropna()
+        if xcol == "report_mean":
+            pts = pts.assign(report_mean=pts["report_mean"].round(1))
+        agg = pts.groupby(["cohort", xcol, ycol]).size().reset_index(name="studenti")
+        scatter = alt.Chart(agg).mark_circle(opacity=0.8, stroke="white", strokeWidth=2).encode(
+            x=alt.X(f"{xcol}:Q", title=names[xcol], scale=alt.Scale(zero=False),
+                    axis=alt.Axis(format="%") if xcol == "attendance" else alt.Axis()),
+            y=alt.Y(f"{ycol}:Q", title=names[ycol], scale=alt.Scale(zero=False)),
+            size=alt.Size("studenti:Q", title="Studenti", scale=alt.Scale(range=[60, 500])),
+            color=color,
+            tooltip=["cohort:N", alt.Tooltip(f"{xcol}:Q", title=names[xcol]),
+                     alt.Tooltip(f"{ycol}:Q", title=names[ycol]), "studenti:Q"],
+        ).properties(height=380)
+        st.altair_chart(scatter, width="stretch")
+        d = df.dropna(subset=["oral", "written"])
+        if len(d):
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Orale − scritto (media)", f"{d['oral_minus_written'].mean():+.1f}")
+            m2.metric("Orale più alto dello scritto", f"{(d['oral_minus_written'] > 0).mean():.0%}")
+            m3.metric("Orale più basso", f"{(d['oral_minus_written'] < 0).mean():.0%}")
+
+    with tab_time:
+        st.caption("Attese misurate dalla fine delle lezioni della coorte dello studente.")
+        med = df.groupby("cohort")[["days_end_to_written", "days_end_to_oral", "days_written_to_oral"]].median()
+        st.dataframe(med.round(0).rename(columns={
+            "days_end_to_written": "giorni fine corso → scritto (mediana)",
+            "days_end_to_oral": "giorni fine corso → orale (mediana)",
+            "days_written_to_oral": "giorni scritto → orale (mediana)"}).reset_index().rename(columns={"cohort": "coorte"}),
+            hide_index=True, width="stretch")
+        c1, c2 = st.columns(2)
+        for col, (days, value, first, title) in zip((c1, c2), (
+                ("days_end_to_written", "written", "prima della fine", "Scritto"),
+                ("days_end_to_oral", "oral", "prima della fine", "Orale"))):
+            w = stats.by_wait(df, days, value, first_label=first).dropna(subset=["media"])
+            base = alt.Chart(w).encode(
+                x=alt.X("attesa:N", sort=list(w["attesa"]), title="Sostenuto dopo la fine delle lezioni",
+                        axis=alt.Axis(labelAngle=-30, labelLimit=160, labelOverlap=False)),
+                y=alt.Y("media:Q", title="Voto medio", scale=alt.Scale(domain=[18, 30])),
+                tooltip=[alt.Tooltip("attesa:N", title="Quando"), alt.Tooltip("media:Q", title="Media"),
+                         alt.Tooltip("n:Q", title="Studenti")],
+            )
+            dots = base.mark_circle(size=140, color=COHORT_COLORS[0], opacity=1)
+            labels = base.mark_text(dy=-14, color="#52514e", fontSize=11).encode(
+                text=alt.Text("n:Q", format="d"))
+            col.altair_chart((dots + labels).properties(height=300, title=f"{title}: voto medio"), width="stretch")
+        st.caption("Il numero sopra ogni punto è quanti studenti ci sono in quel gruppo: "
+                   "con pochi studenti la media è poco affidabile.")
+        status = pd.DataFrame({
+            "coorte": chosen,
+            "iscritti": [int((df["cohort"] == c).sum()) for c in chosen],
+            "senza scritto": [int(((df["cohort"] == c) & (df["written_attempts"] == 0)).sum()) for c in chosen],
+            "scritto superato, orale mancante": [int(((df["cohort"] == c) & df["written_passed"] & df["oral"].isna()).sum())
+                                                 for c in chosen],
+            "con orale": [int(((df["cohort"] == c) & df["oral"].notna()).sum()) for c in chosen],
+            "più tentativi allo scritto": [int(((df["cohort"] == c) & (df["written_attempts"] > 1)).sum()) for c in chosen],
+        })
+        st.subheader("A che punto sono gli studenti")
+        st.dataframe(status, hide_index=True, width="stretch")
+
+
 def page_settings(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
     st.header("Impostazioni")
     st.markdown(f"""
@@ -574,6 +723,7 @@ PAGES = {
     "✍️ Foglio firme": page_signature,
     "📝 Esami": page_exams,
     "🗓️ Appelli": page_appelli,
+    "📊 Statistiche": page_stats,
     "⚙️ Impostazioni": page_settings,
 }
 
