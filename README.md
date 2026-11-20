@@ -81,8 +81,8 @@ with the denominator capped at `max_counted_hours`.
 
 ## Migrating from the old scripts
 
-The previous `lborg/` package and `macros/` scripts are still in the repository but deprecated.
-To copy their data into the new database:
+The previous `lborg` scripts have been removed (they are in the git history before this
+version). To copy the data of their databases into the new one:
 
 ```bash
 lab migrate-legacy --students data/students.db --attendance data/attendance.db \

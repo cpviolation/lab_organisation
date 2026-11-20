@@ -1,6 +1,0 @@
-typer
-jinja2
-pandas
-openpyxl
-tabulate
-numpy  # used by the legacy lborg package

@@ -21,7 +21,6 @@ else
     source "$VENV_DIR/bin/activate"
 fi
 
-export LBORG="$PROJECT_ROOT"
 export VIRTUAL_ENV="$VENV_DIR"
 export PATH="$VENV_DIR/bin:$PATH"
 
