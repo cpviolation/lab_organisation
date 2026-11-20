@@ -134,18 +134,35 @@ def print_table(records: list[dict]) -> None:
     if not records:
         print("(no rows)")
         return
-    print(tabulate(records, headers="keys", tablefmt="simple"))
+    print(tabulate(records, headers="keys", tablefmt="simple", disable_numparse=True))
 
 
 def export(records: list[dict], path: Path) -> Path:
     import pandas as pd
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame(records)
     if path.suffix.lower() == ".csv":
-        df.to_csv(path, index=False)
+        def csv_value(value):
+            if isinstance(value, str) and (
+                value.lstrip().startswith(("=", "+", "-", "@"))
+                or value.startswith(("\t", "\r", "\n"))
+            ):
+                return "'" + value
+            return value
+
+        safe_records = [
+            {key: csv_value(value) for key, value in record.items()}
+            for record in records
+        ]
+        pd.DataFrame(safe_records).to_csv(path, index=False)
     elif path.suffix.lower() == ".xlsx":
-        df.to_excel(path, index=False)
+        with pd.ExcelWriter(path, engine="openpyxl") as writer:
+            pd.DataFrame(records).to_excel(writer, index=False)
+            for sheet in writer.book.worksheets:
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        if isinstance(cell.value, str):
+                            cell.data_type = "s"
     else:
         raise ValueError("export format must be .csv or .xlsx")
     return path
