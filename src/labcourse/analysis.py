@@ -80,8 +80,32 @@ def exam_table(
             el.eligible,
             "; ".join(el.reasons),
         ))
-    if wanted is not None:
-        missing = wanted - {r.student.matricola for r in out}
-        for m in sorted(missing):
-            raise LookupError(f"matricola {m} is not enrolled in {cohort_name}")
     return out
+
+
+def exam_table_multi(
+    conn: sqlite3.Connection, cohort_names: list[str], cfg: Config,
+    matricole: list[str] | None = None, order: str = "group",
+) -> tuple[list[ExamRow], list[str]]:
+    """Exam rows over several cohorts, plus warnings for requested ids not found.
+
+    A student enrolled in more than one of the cohorts gets one row per enrolment.
+    """
+    rows: list[ExamRow] = []
+    for name in cohort_names:
+        rows += exam_table(conn, name, cfg, matricole=matricole, order=order)
+    warnings = []
+    if matricole:
+        found = {r.student.matricola for r in rows}
+        for m in dict.fromkeys(str(x) for x in matricole):
+            if m in found:
+                continue
+            st = repo.student_by_matricola(conn, m)
+            if st is None:
+                warnings.append(f"matricola {m} is not in the database")
+                continue
+            other = [r.cohort for r in repo.search_students(conn, matricole=[m]) if r.cohort]
+            where = ", ".join(other) if other else "no cohort"
+            warnings.append(f"matricola {m} ({st.full_name}) is not enrolled in "
+                            f"{', '.join(cohort_names)} (enrolled in: {where})")
+    return rows, warnings

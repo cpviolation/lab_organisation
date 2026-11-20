@@ -21,7 +21,7 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-lab = "labcourse.cli:app"
+lab = "labcourse.cli:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

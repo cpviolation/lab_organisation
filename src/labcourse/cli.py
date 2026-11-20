@@ -73,6 +73,19 @@ CohortOpt = typer.Option(None, "--cohort", "-C", help="Cohort, e.g. 2025/26 (def
 DryRunOpt = typer.Option(False, "--dry-run", "-n", help="Show what would change without writing.")
 VerboseOpt = typer.Option(False, "--verbose", "-v", help="List every change.")
 StrictOpt = typer.Option(False, "--strict", help="Write nothing if any problem is reported.")
+MULTI_VALUE_FLAGS = ("-m", "--matricola")
+MatricoleOpt = typer.Option(
+    None, "--matricola", "-m",
+    help="Student id(s): -m 100001 100002, -m 100001,100002 or -m 100001 -m 100002.",
+)
+
+
+def split_ids(values: Optional[list[str]]) -> list[str]:
+    """Flatten ids given as repeated options and/or comma/space separated lists."""
+    out: list[str] = []
+    for v in values or []:
+        out.extend(x for x in v.replace(",", " ").split() if x)
+    return list(dict.fromkeys(out))
 
 
 def run_import(
@@ -191,7 +204,7 @@ def students_list(
 
 @students_app.command("search")
 def students_search(
-    matricola: Optional[list[str]] = typer.Option(None, "--matricola", "-m"),
+    matricola: Optional[list[str]] = MatricoleOpt,
     name: Optional[str] = typer.Option(None, "--name"),
     surname: Optional[str] = typer.Option(None, "--surname"),
     cohort: Optional[str] = typer.Option(None, "--cohort", "-C", help="Restrict to a cohort."),
@@ -204,7 +217,7 @@ def students_search(
         cid = repo.cohort_id(conn, cohort) if cohort else None
     except LookupError as e:
         fail(str(e))
-    rows = repo.search_students(conn, matricola, name, surname, cid)
+    rows = repo.search_students(conn, split_ids(matricola), name, surname, cid)
     if not rows:
         typer.echo("No student found.")
         raise typer.Exit(1)
@@ -379,21 +392,33 @@ def exams_list(cohort: Optional[str] = CohortOpt) -> None:
 
 @exams_app.command("eligible")
 def exams_eligible(
-    cohort: Optional[str] = CohortOpt,
-    matricola: Optional[list[str]] = typer.Option(None, "--matricola", "-m", help="Only these students."),
+    cohort: Optional[str] = typer.Option(
+        None, "--cohort", "-C",
+        help="Cohort, or 'all'. Default: all cohorts with -m, otherwise default_cohort from course.toml."),
+    matricola: Optional[list[str]] = MatricoleOpt,
     show_all: bool = typer.Option(False, "--all", "-a", help="Also list students who are not admitted."),
     fmt: str = typer.Option("table", "--format", "-f", help="table, csv or xlsx"),
     output: Optional[Path] = typer.Option(None, "--output", "-o"),
 ) -> None:
     """Students admitted to the oral: written passed and attendance above the minimum."""
-    c = resolve_cohort(cohort)
+    matricola = split_ids(matricola)
     conn = open_db()
+    if cohort == "all" or (cohort is None and matricola):
+        cohorts = repo.list_cohorts(conn)
+        stem = "all_exams"
+    else:
+        c = resolve_cohort(cohort)
+        cohorts = [c]
+        stem = f"{slug(c)}_exams"
     try:
-        rows = analysis.exam_table(conn, c, state.cfg, matricole=matricola)
+        rows, warnings = analysis.exam_table_multi(conn, cohorts, state.cfg, matricole=matricola)
     except LookupError as e:
         fail(str(e))
+    for w in warnings:
+        typer.secho(f"Warning: {w}", fg=typer.colors.YELLOW, err=True)
     shown = rows if (show_all or matricola) else [r for r in rows if r.eligible]
-    emit(render.exam_records(shown), fmt, f"{slug(c)}_exams", output)
+    if shown:
+        emit(render.exam_records(shown, with_cohort=len(cohorts) > 1), fmt, stem, output)
     typer.echo(f"\n{sum(r.eligible for r in rows)} of {len(rows)} students admitted to the oral.")
 
 
@@ -431,5 +456,38 @@ def backup_cmd() -> None:
     typer.echo(f"Backup: {copy}" if copy else "No database yet.")
 
 
+def expand_multi(argv: list[str], flags: tuple[str, ...] = MULTI_VALUE_FLAGS) -> list[str]:
+    """Let ``-m 1 2 3`` mean ``-m 1 -m 2 -m 3`` (click options take a fixed number of values).
+
+    Values are collected until the next token that starts with ``-``. Only used for
+    options of commands that take no positional arguments.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        out.append(tok)
+        i += 1
+        if tok in flags:
+            first = True
+            while i < len(argv) and (first or not argv[i].startswith("-")):
+                if not first:
+                    out.append(tok)
+                out.append(argv[i])
+                i += 1
+                first = False
+        if tok == "--":
+            out.extend(argv[i:])
+            break
+    return out
+
+
+def run() -> None:
+    """Console entry point."""
+    import sys
+
+    app(args=expand_multi(sys.argv[1:]), prog_name="lab")
+
+
 if __name__ == "__main__":
-    app()
+    run()

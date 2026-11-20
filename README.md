@@ -66,6 +66,8 @@ lab exams import data/raw/relazioni.json --kind report  # {"2025-12-01": {"<grup
 lab exams import data/raw/orale.json --kind oral
 lab exams eligible                        # admitted to the oral; --all to include the others
 lab exams eligible --format xlsx          # for the department office
+lab exams eligible -m 100001 100002       # only these students, searched in every cohort
+lab exams eligible --cohort all           # every cohort (ids not found are reported as warnings)
 
 lab students search --surname dangelo
 lab students list --format csv

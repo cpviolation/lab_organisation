@@ -133,3 +133,37 @@ def test_cli_pdfs(course, tmp_path):
     assert (tmp_path / "output" / "2025-10-01_signature.pdf").exists()
     ok(course, "attendance", "report", "--format", "pdf")
     assert (tmp_path / "output" / "2025_26_attendance.pdf").exists()
+
+
+def test_expand_multi():
+    from labcourse.cli import expand_multi
+    assert expand_multi(["exams", "eligible", "-m", "1", "2", "3", "--all"]) == \
+        ["exams", "eligible", "-m", "1", "-m", "2", "-m", "3", "--all"]
+    assert expand_multi(["-m", "1", "--matricola", "2", "4"]) == ["-m", "1", "--matricola", "2", "--matricola", "4"]
+    assert expand_multi(["-C", "2025/26", "-m", "1"]) == ["-C", "2025/26", "-m", "1"]
+
+
+def test_cli_multiple_matricole(course):
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "exams", "import", "written.json", "--kind", "written")
+    from labcourse.cli import expand_multi
+    for args in (["-m", "100001", "100004"], ["-m", "100001,100004"], ["-m", "100001", "-m", "100004"]):
+        out = ok(course, *expand_multi(["exams", "eligible", *args]))
+        assert "Clapton" in out and "D'Angelo" in out and "Baker" not in out
+        out = ok(course, *expand_multi(["students", "search", *args]))
+        assert "Clapton" in out and "D'Angelo" in out and "Baker" not in out
+
+
+def test_cli_eligible_across_cohorts_with_warnings(course):
+    ok(course, "cohort", "import", "students_2024.json", "--cohort", "2024/25")
+    ok(course, "cohort", "import", "students_2025.json", "--cohort", "2025/26")
+    # explicit cohort: ids elsewhere or unknown are warnings, not errors
+    r = course.invoke(app, ["exams", "eligible", "--cohort", "2025/26", "-m", "100001", "-m", "090001", "-m", "999"])
+    assert r.exit_code == 0, r.output
+    assert "Warning: matricola 090001 (Clapton Eric) is not enrolled in 2025/26 (enrolled in: 2024/25)" in r.output
+    assert "Warning: matricola 999 is not in the database" in r.output
+    # without --cohort, -m searches every cohort and shows the cohort column
+    out = ok(course, "exams", "eligible", "-m", "100001", "-m", "090001")
+    assert "coorte" in out and "2024/25" in out and "2025/26" in out
+    out = ok(course, "exams", "eligible", "--cohort", "all", "--all")
+    assert "6 students" not in out and "of 7 students" in out  # 5 + 2 enrolments (Bruce in both)

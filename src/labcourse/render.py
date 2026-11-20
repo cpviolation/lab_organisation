@@ -118,9 +118,10 @@ def attendance_records(sessions: list[SessionInfo], rows: list[AttendanceRow]) -
     return out
 
 
-def exam_records(rows: list[ExamRow]) -> list[dict]:
+def exam_records(rows: list[ExamRow], with_cohort: bool = False) -> list[dict]:
     return [
         {"cognome": r.student.surname, "nome": r.student.name, "matricola": r.student.matricola,
+         **({"coorte": r.student.cohort or ""} if with_cohort else {}),
          "gruppo": r.student.lab_group if r.student.lab_group is not None else "",
          "presenza %": round(r.attendance * 100), "scritto": r.written, "relazioni": r.reports,
          "punti relazioni": f"{r.report_points:g}" if r.report_points is not None else "",
