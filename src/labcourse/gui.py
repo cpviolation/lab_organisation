@@ -348,7 +348,9 @@ def page_signature(cfg: Config, conn: sqlite3.Connection, cohort: str | None) ->
 
 def page_exams(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
     st.header("Esami")
-    tab_el, tab_list = st.tabs(["Ammessi all'orale", "Appelli e relazioni"])
+    tab_el, tab_orals, tab_list = st.tabs(["Ammessi all'orale", "Tabella orali per appello", "Appelli e relazioni"])
+    with tab_orals:
+        orals_tab(cfg, conn)
     cohorts = repo.list_cohorts(conn)
     with tab_el:
         ids_text = st.text_input("Matricole (facoltativo)", placeholder="incolla le matricole separate da spazi o virgole")
@@ -403,6 +405,59 @@ def page_exams(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> Non
             st.dataframe(pd.DataFrame([{"tipo": kinds.get(r["kind"], r["kind"]), "data": r["date"],
                                         "esperienza": r["label"], "voti": r["n"]} for r in rows]),
                          hide_index=True, width="stretch")
+
+
+def orals_tab(cfg: Config, conn: sqlite3.Connection) -> None:
+    st.caption("Carica il file JSON con i risultati dello scritto: gli iscritti all'appello sono gli studenti "
+               "presenti nel file. Il file viene solo letto, non importato; i suoi voti si sommano a quelli "
+               "già nel database.")
+    upload = st.file_uploader("Risultati dello scritto (JSON)", type=["json"], key="orals-upload")
+    if not upload:
+        return
+    path = save_upload(upload)
+    try:
+        by_date, problems = importers.read_marks_file(path)
+    except ValueError as e:
+        st.error(str(e))
+        return
+    finally:
+        shutil.rmtree(path.parent, ignore_errors=True)
+    for p in problems:
+        st.warning(p)
+    if not by_date:
+        st.error("Nessun voto trovato nel file.")
+        return
+    dates = sorted(by_date, reverse=True)
+    c1, c2 = st.columns(2)
+    iso = c1.selectbox("Appello", dates, format_func=lambda d: f"{d[8:]}/{d[5:7]}/{d[:4]} ({len(by_date[d])} iscritti)")
+    show_all = c2.toggle("Mostra anche i non ammessi", value=True, key="orals-all")
+    rows = analysis.oral_table(conn, cfg, iso, by_date[iso], all_marks=by_date)
+    admitted = [r for r in rows if r.eligible]
+    unknown = [r.matricola for r in rows if r.exam is None]
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Iscritti all'appello", len(rows))
+    m2.metric("Ammessi all'orale", len(admitted))
+    m3.metric("Non nel database", len(unknown))
+    if unknown:
+        st.warning("Matricole non presenti nel database (nessun dato su presenze e relazioni): "
+                   + ", ".join(unknown))
+    records = render.oral_records(rows if show_all else admitted)
+    df = pd.DataFrame(records)
+    if df.empty:
+        st.info("Nessuno studente da mostrare.")
+    else:
+        st.dataframe(
+            df.style.map(lambda v: "color: #1e8449; font-weight: 600" if v == "sì"
+                         else ("color: #c0392b" if v == "no" else ""), subset=["ammesso"]),
+            hide_index=True, width="stretch",
+        )
+    download_buttons(records, f"{iso}_orali", "orals")
+    if admitted:
+        pdf_button(
+            "Genera PDF per l'orale (solo ammessi)",
+            lambda: render.orals_tex(admitted, cfg.title, iso, cfg.rows_per_table),
+            cfg.output_dir, f"{iso}_orali", f"orals-pdf-{iso}",
+        )
 
 
 def page_settings(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:

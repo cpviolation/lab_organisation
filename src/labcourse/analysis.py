@@ -52,7 +52,13 @@ class ExamRow:
 def exam_table(
     conn: sqlite3.Connection, cohort_name: str, cfg: Config,
     matricole: list[str] | None = None, order: str = "group",
+    extra_written: dict[str, list[tuple[str, Mark]]] | None = None,
 ) -> list[ExamRow]:
+    """Exam rows for one cohort.
+
+    ``extra_written`` adds written attempts not (yet) in the database, by matricola;
+    an attempt on a date already stored replaces the stored one.
+    """
     cohort = repo.cohort_id(conn, cohort_name)
     _, att_rows = attendance_table(conn, cohort_name, cfg, order=order)
     results = repo.cohort_results(conn, cohort)
@@ -63,7 +69,10 @@ def exam_table(
         if wanted is not None and st.matricola not in wanted:
             continue
         res = results.get(st.id, [])
-        written = [(r.date, Mark.parse(r.raw_mark)) for r in res if r.kind == "written"]
+        written = {r.date: Mark.parse(r.raw_mark) for r in res if r.kind == "written"}
+        for d, m in (extra_written or {}).get(st.matricola, []):
+            written[d] = m
+        written = sorted(written.items())
         reports = [r for r in res if r.kind == "report"]
         orals = [r for r in res if r.kind == "oral"]
         el = oral_eligibility(written, a.fraction, cfg.exams, cfg.attendance)
@@ -109,3 +118,59 @@ def exam_table_multi(
             warnings.append(f"matricola {m} ({st.full_name}) is not enrolled in "
                             f"{', '.join(cohort_names)} (enrolled in: {where})")
     return rows, warnings
+
+
+@dataclass(frozen=True)
+class OralRow:
+    matricola: str
+    appello_mark: str                 # mark of this student at the appello
+    exam: ExamRow | None              # None when the student is not in the database
+    cohorts: tuple[str, ...] = ()
+
+    @property
+    def eligible(self) -> bool:
+        return self.exam is not None and self.exam.eligible
+
+    @property
+    def reason(self) -> str:
+        return self.exam.reasons if self.exam else "not in the database"
+
+
+def oral_table(
+    conn: sqlite3.Connection, cfg: Config, appello_date: str, marks: dict[str, Mark],
+    all_marks: dict[str, dict[str, Mark]] | None = None,
+) -> list[OralRow]:
+    """Students registered for a written appello (``marks``: matricola -> mark) and
+    whether they are admitted to the oral.
+
+    Marks from the file are counted together with those in the database without
+    being written. ``all_marks`` (date -> marks) adds the other dates of the same file.
+    Each student is evaluated in their most recent cohort.
+    """
+    extra: dict[str, list[tuple[str, Mark]]] = {}
+    for d, by_student in (all_marks or {appello_date: marks}).items():
+        for m, mark in by_student.items():
+            extra.setdefault(str(m), []).append((d, mark))
+    for m, mark in marks.items():
+        extra.setdefault(str(m), [])
+        if (appello_date, mark) not in extra[str(m)]:
+            extra[str(m)].append((appello_date, mark))
+
+    # group the students by their most recent cohort
+    by_cohort: dict[str, list[str]] = {}
+    cohorts_of: dict[str, tuple[str, ...]] = {}
+    for m in marks:
+        enrolments = sorted({r.cohort for r in repo.search_students(conn, matricole=[str(m)]) if r.cohort})
+        cohorts_of[str(m)] = tuple(enrolments)
+        if enrolments:
+            by_cohort.setdefault(enrolments[-1], []).append(str(m))
+    exam_rows: dict[str, ExamRow] = {}
+    for cohort, ids in by_cohort.items():
+        for r in exam_table(conn, cohort, cfg, matricole=ids, extra_written=extra):
+            exam_rows[r.student.matricola] = r
+
+    rows = [OralRow(str(m), mark.raw, exam_rows.get(str(m)), cohorts_of[str(m)]) for m, mark in marks.items()]
+    rows.sort(key=lambda r: (r.exam is None,
+                             (r.exam.student.surname.casefold(), r.exam.student.name.casefold()) if r.exam else ("", ""),
+                             r.matricola))
+    return rows

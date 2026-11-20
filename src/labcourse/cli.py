@@ -424,6 +424,59 @@ def exams_eligible(
     typer.echo(f"\n{sum(r.eligible for r in rows)} of {len(rows)} students admitted to the oral.")
 
 
+@exams_app.command("orals")
+def exams_orals(
+    file: Path = typer.Argument(..., exists=True, help='Written results of the appello: {"2026-11-17": {"<matricola>": "27"}}.'),
+    date: Optional[str] = typer.Option(None, "--date", "-d", help="Appello date in the file (default: the latest)."),
+    show_all: bool = typer.Option(False, "--all", "-a", help="Also list students who are not admitted."),
+    fmt: str = typer.Option("table", "--format", "-f", help="table, pdf, csv or xlsx"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Oral exam list for the students registered for a written appello.
+
+    The file is the one with the written results (it is read, not imported): its marks
+    are counted together with those already in the database.
+    """
+    cfg = state.cfg
+    try:
+        by_date, problems = importers.read_marks_file(file)
+    except (ValueError, OSError) as e:
+        fail(str(e))
+    for p in problems:
+        typer.secho(f"Warning: {p}", fg=typer.colors.YELLOW, err=True)
+    if not by_date:
+        fail(f"{file}: no marks found")
+    if date:
+        try:
+            iso = importers.parse_date(date)
+        except ValueError as e:
+            fail(str(e))
+        if iso not in by_date:
+            fail(f"{iso} is not in {file} (dates: {', '.join(sorted(by_date))})")
+    else:
+        iso = max(by_date)
+    conn = open_db()
+    rows = analysis.oral_table(conn, cfg, iso, by_date[iso], all_marks=by_date)
+    for r in rows:
+        if r.exam is None:
+            typer.secho(f"Warning: matricola {r.matricola} is not in the database", fg=typer.colors.YELLOW, err=True)
+    admitted = [r for r in rows if r.eligible]
+    stem = f"{iso}_orali"
+    if fmt == "pdf":
+        if not admitted:
+            fail("no student admitted to the oral")
+        tex = render.orals_tex(admitted, cfg.title, iso, cfg.rows_per_table)
+        try:
+            target = output_path("pdf", stem, output).resolve()
+            pdf = render.compile_pdf(tex, target.parent, target.stem)
+        except RuntimeError as e:
+            fail(str(e))
+        typer.echo(f"Written {pdf}")
+    else:
+        emit(render.oral_records(rows if show_all else admitted), fmt, stem, output)
+    typer.echo(f"\nAppello {iso}: {len(rows)} registered, {len(admitted)} admitted to the oral.")
+
+
 # ---------------------------------------------------------------- legacy
 
 @app.command("migrate-legacy")

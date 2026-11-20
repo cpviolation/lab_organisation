@@ -68,6 +68,8 @@ lab exams eligible                        # admitted to the oral; --all to inclu
 lab exams eligible --format xlsx          # for the department office
 lab exams eligible -m 100001 100002       # only these students, searched in every cohort
 lab exams eligible --cohort all           # every cohort (ids not found are reported as warnings)
+lab exams orals data/raw/exams_20261117.json             # oral list for the students registered
+lab exams orals data/raw/exams_20261117.json -f pdf      # for that written appello (file read, not imported)
 
 lab students search --surname dangelo
 lab students list --format csv

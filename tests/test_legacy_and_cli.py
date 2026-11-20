@@ -167,3 +167,54 @@ def test_cli_eligible_across_cohorts_with_warnings(course):
     assert "coorte" in out and "2024/25" in out and "2025/26" in out
     out = ok(course, "exams", "eligible", "--cohort", "all", "--all")
     assert "6 students" not in out and "of 7 students" in out  # 5 + 2 enrolments (Bruce in both)
+
+
+def _appello(tmp_path):
+    f = tmp_path / "appello.json"
+    # 100001 passes now; 100002 absent now but passed before (in the db); 100003 fails now;
+    # 100004 has a mark only in this file (not imported); 555 is not in the database
+    f.write_text('{"2026-03-01": {"100001": "25", "100002": "A", "100003": "15", "100004": "28", "555": "30"}}')
+    return f
+
+
+def test_oral_table_counts_file_marks_without_importing(course, tmp_path):
+    from labcourse import analysis, db, importers
+    from labcourse.config import load_config
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "sessions", "add", "sessions.json")
+    ok(course, "attendance", "import", "attendance.json")   # Baker (100002) absent -> 0%
+    w = tmp_path / "w.json"
+    w.write_text('{"2026-01-20": {"100002": "24", "100003": "20"}}')
+    ok(course, "exams", "import", str(w), "--kind", "written")
+
+    cfg = load_config(tmp_path / "course.toml")
+    conn = db.connect(cfg.database)
+    by_date, problems = importers.read_marks_file(_appello(tmp_path))
+    assert not problems
+    rows = {r.matricola: r for r in analysis.oral_table(conn, cfg, "2026-03-01", by_date["2026-03-01"])}
+    assert rows["100001"].eligible and rows["100001"].appello_mark == "25"
+    assert not rows["100002"].eligible and "attendance" in rows["100002"].reason  # passed before, 0% attendance
+    assert rows["100003"].eligible and rows["100003"].exam.written.startswith("20")  # best mark counts
+    assert rows["100004"].eligible and rows["100004"].exam.written.startswith("28")  # file mark counted
+    assert rows["555"].exam is None and not rows["555"].eligible
+    # nothing was written
+    assert conn.execute("SELECT COUNT(*) FROM assessment WHERE date = '2026-03-01'").fetchone()[0] == 0
+    conn.close()
+
+
+def test_cli_orals(course, tmp_path):
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "sessions", "add", "sessions.json")
+    ok(course, "attendance", "import", "attendance.json")
+    f = _appello(tmp_path)
+    out = ok(course, "exams", "orals", str(f), "--all")
+    assert "5 registered, 2 admitted" in out and "555" in out
+    out = ok(course, "exams", "orals", str(f))
+    assert "Clapton" in out and "Baker" not in out
+    r = course.invoke(app, ["exams", "orals", str(f), "--date", "2026-01-01"])
+    assert r.exit_code == 1 and "not in" in r.output
+    ok(course, "exams", "orals", str(f), "--format", "xlsx")
+    assert (tmp_path / "output" / "2026-03-01_orali.xlsx").exists()
+    if shutil.which("pdflatex"):
+        ok(course, "exams", "orals", str(f), "--format", "pdf")
+        assert (tmp_path / "output" / "2026-03-01_orali.pdf").exists()

@@ -487,3 +487,27 @@ def import_reports(conn: sqlite3.Connection, path: str | Path, cohort_name: str,
                     if outcome != "same":
                         rep.change(f"{iso} {experiment} {st.full_name}: {old or '-'} -> {g}")
     return rep
+
+
+def read_marks_file(path: str | Path) -> tuple[dict[str, dict[str, Mark]], list[str]]:
+    """Read a written/oral marks file without importing it.
+
+    Returns ``{iso date: {matricola: Mark}}`` and a list of problems (invalid dates or marks).
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f'{path}: expected {{"<date>": {{"<matricola>": "<mark>"}}}}')
+    out: dict[str, dict[str, Mark]] = {}
+    problems = []
+    for d, marks in data.items():
+        try:
+            iso = parse_date(d)
+        except ValueError as e:
+            problems.append(str(e))
+            continue
+        for matricola, raw in marks.items():
+            try:
+                out.setdefault(iso, {})[str(matricola).strip()] = Mark.parse(raw)
+            except ValueError as e:
+                problems.append(f"{iso} {matricola}: {e}")
+    return out, problems

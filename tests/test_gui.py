@@ -54,3 +54,12 @@ def test_exams_hide_students_below_attendance(course, monkeypatch, tmp_path):
     show_low.set_value(True).run()
     assert "Baker" in names()
     assert not at.exception
+
+
+def test_orals_tab_renders(course, monkeypatch, tmp_path):
+    ok(course, "cohort", "import", "students_2025.json")
+    monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
+    at = AppTest.from_file(GUI, default_timeout=30).run()
+    at.sidebar.radio[0].set_value("📝 Esami").run()
+    assert not at.exception
+    assert any("Tabella orali" in t.label for t in at.tabs)
