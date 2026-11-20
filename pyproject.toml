@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labcourse"
+version = "0.2.0"
+description = "Manage a university lab course: students, groups, attendance, exams and printable sheets."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.12",
+    "jinja2>=3.1",
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+    "tabulate>=0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+lab = "labcourse.cli:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+labcourse = ["templates/*.j2", "course.example.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

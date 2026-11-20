@@ -1,5 +1,0 @@
-tabulate
-numpy
-pandas
-openpyxl
-streamlit

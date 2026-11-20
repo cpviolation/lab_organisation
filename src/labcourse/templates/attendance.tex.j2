@@ -1,0 +1,31 @@
+\documentclass[10pt,landscape]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1.5cm,headsep=0.8cm]{geometry}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage[table]{xcolor}
+\setlength{\tabcolsep}{3pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{<< title|tex >>}
+\rhead{<< cohort|tex >>}
+\cfoot{\thepage}
+
+\begin{document}
+<% for rows in tables %>
+\begin{center}
+\small
+\begin{tabular}{|l|l|<% for s in sessions %>c|<% endfor %>r|}
+\hline
+\textbf{Studente} & \textbf{Gr.}<% for s in sessions %> & \rotatebox{90}{<< s.date[8:] >>/<< s.date[5:7] >>}<% endfor %> & \textbf{\%} \\
+\hline
+<% for r in rows %>
+<< r.student.surname|tex >> << r.student.name|tex >> & << r.student.lab_group if r.student.lab_group is not none else '' >><% for s in sessions %> & << r.statuses.get(s.id, '') >><% endfor %> & <% if r.fraction < min_fraction %>\cellcolor{red!20}<% endif %><< '%.0f'|format(r.fraction * 100) >> \\
+\hline
+<% endfor %>
+\end{tabular}
+\end{center}
+<% if not loop.last %>\newpage<% endif %>
+<% endfor %>
+\end{document}

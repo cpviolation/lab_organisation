@@ -1,0 +1,42 @@
+# Course configuration for the `lab` command.
+# Relative paths are resolved against the folder containing this file.
+
+title = "Laboratorio I – Turno Beta"
+database = "data/lab.db"
+output_dir = "output"
+backup_dir = "data/backups"
+# Cohort used when --cohort is not given
+default_cohort = "2025/26"
+
+[attendance]
+min_fraction = 0.75          # minimum attendance to be admitted to the oral
+max_counted_hours = 56       # total hours are capped at this value
+present_codes = ["P", "R", "G"]   # P presente, R ritardo, G giustificato; A = assente
+
+[exams]
+written_pass = 18
+# "best": the best written mark counts; "latest": the most recent paper handed in counts
+# (absent / withdrawn attempts are ignored in both cases)
+written_policy = "best"
+report_top_points = 31
+report_scale = ["A+", "A", "A-", "A-/B+",
+                "B+", "B", "B-", "B-/C+",
+                "C+", "C", "C-", "C-/D+",
+                "D+", "D", "D-", "E"]
+
+# Grades written in other forms, mapped to a grade of the scale.
+# Any "X/Y" of two grades in the scale (e.g. "A/A-") is accepted and worth their average.
+[exams.report_aliases]
+"A--" = "A-/B+"
+"A--/B+" = "A-/B+"
+
+[excel]
+# Attendance register exported from the e-learning platform
+name_column = "Nome"
+surname_column = "Cognome"
+matricola_column = ""        # leave empty if the register has no student id
+# Only use date columns whose header contains this text (e.g. "10.30AM"); empty = all
+time_marker = ""
+
+[sheets]
+rows_per_table = 32          # max rows per printed table (groups are never split)
