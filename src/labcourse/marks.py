@@ -79,13 +79,30 @@ class ReportScale:
 
     grades: tuple[str, ...]
     top_points: int = 31
+    aliases: tuple[tuple[str, str], ...] = ()  # (written form, canonical grade)
 
-    def points(self, grade: str) -> int:
-        g = str(grade).strip().upper()
-        if g not in self.grades:
-            raise ValueError(f"Invalid report grade {grade!r}; expected one of {', '.join(self.grades)}")
-        return self.top_points - self.grades.index(g)
+    def canonical(self, grade: str) -> str:
+        """Normalised grade: upper case, no spaces, aliases applied.
+
+        A grade not in the scale but written ``X/Y`` with X and Y in the scale
+        (e.g. ``A/A-``) is accepted and worth the average of the two.
+        """
+        g = "".join(str(grade).split()).upper()
+        g = dict(self.aliases).get(g, g)
+        if g in self.grades:
+            return g
+        parts = g.split("/")
+        if len(parts) == 2 and all(p in self.grades for p in parts):
+            return g
+        raise ValueError(f"Invalid report grade {grade!r}; expected one of {', '.join(self.grades)} "
+                         "or two of them as X/Y")
+
+    def points(self, grade: str) -> float:
+        g = self.canonical(grade)
+        if g in self.grades:
+            return self.top_points - self.grades.index(g)
+        a, b = g.split("/")
+        return (self.points(a) + self.points(b)) / 2
 
     def validate(self, grade: str) -> str:
-        self.points(grade)
-        return str(grade).strip().upper()
+        return self.canonical(grade)

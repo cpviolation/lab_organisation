@@ -82,6 +82,6 @@ def oral_eligibility(
     return Eligibility(not reasons, attendance, written, tuple(reasons))
 
 
-def report_score(grades: Iterable[str], exam_rules: ExamRules) -> int:
+def report_score(grades: Iterable[str], exam_rules: ExamRules) -> float:
     """Sum of report points (one letter grade per experiment)."""
     return sum(exam_rules.report_scale.points(g) for g in grades)

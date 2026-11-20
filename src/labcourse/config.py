@@ -89,6 +89,8 @@ def load_config(path: str | Path) -> Config:
             report_scale=ReportScale(
                 tuple(g.upper() for g in ex.get("report_scale", DEFAULT_REPORT_SCALE)),
                 int(ex.get("report_top_points", 31)),
+                tuple((str(k).replace(" ", "").upper(), str(v).replace(" ", "").upper())
+                      for k, v in ex.get("report_aliases", {}).items()),
             ),
         ),
         excel=ExcelFormat(

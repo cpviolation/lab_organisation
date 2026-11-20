@@ -123,7 +123,7 @@ def exam_records(rows: list[ExamRow]) -> list[dict]:
         {"cognome": r.student.surname, "nome": r.student.name, "matricola": r.student.matricola,
          "gruppo": r.student.lab_group if r.student.lab_group is not None else "",
          "presenza %": round(r.attendance * 100), "scritto": r.written, "relazioni": r.reports,
-         "punti relazioni": r.report_points if r.report_points is not None else "",
+         "punti relazioni": f"{r.report_points:g}" if r.report_points is not None else "",
          "orale": r.oral, "ammesso": "sì" if r.eligible else "no", "motivo": r.reasons}
         for r in rows
     ]

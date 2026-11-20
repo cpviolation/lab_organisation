@@ -110,3 +110,15 @@ def test_eligibility():
     assert not failed.eligible and failed.reasons == ("written 17 < 18",)
     none = oral_eligibility([], 0.9, rules, RULES)
     assert none.reasons == ("no written exam",)
+
+
+def test_report_scale_slash_grades_and_aliases():
+    from labcourse.marks import ReportScale
+    from labcourse.config import DEFAULT_REPORT_SCALE
+    scale = ReportScale(DEFAULT_REPORT_SCALE, 31, (("A--", "A-/B+"), ("A--/B+", "A-/B+")))
+    assert scale.points("A/A-") == 29.5
+    assert scale.points("b/b-") == 25.5
+    assert scale.points("A-/B+") == 28 == scale.points("A--") == scale.points("A--/B+")
+    assert scale.canonical("a--") == "A-/B+"
+    with pytest.raises(ValueError):
+        scale.points("A/F")

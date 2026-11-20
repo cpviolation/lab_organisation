@@ -12,6 +12,11 @@ from .importers import ImportReport, parse_date
 from .marks import Mark
 
 
+# "Calorimetria:A- Tubo Acustico:A+" -> [("Calorimetria", "A-"), ("Tubo Acustico", "A+")]
+# labels may contain spaces; grades do not
+_REPORT_ENTRY = re.compile(r"\s*([^:]+?)\s*:\s*(\S+)")
+
+
 def _rows(path: Path, table: str) -> tuple[list[str], list[tuple]]:
     src = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
@@ -191,16 +196,21 @@ def migrate_legacy(
             for kind, mcol, dcol in (("written", "written", "written_date"), ("oral", "result", "oral_date")):
                 if rec.get(mcol) in (None, ""):
                     continue
+                raw = str(rec[mcol]).strip()
+                if raw in ("31", "31.0"):  # the old code stored 30L as 31
+                    raw = "30L"
                 try:
-                    put(kind, rec.get(dcol), Mark.parse(rec[mcol]).raw)
+                    put(kind, rec.get(dcol), Mark.parse(raw).raw)
                 except ValueError as e:
                     rep.problem(f"{st.full_name}: {kind}: {e}")
             if rec.get("reports"):
-                for item in str(rec["reports"]).split():
-                    if ":" not in item:
-                        rep.problem(f"{st.full_name}: report entry {item!r} not understood")
-                        continue
-                    label, grade = item.rsplit(":", 1)
+                text = str(rec["reports"]).strip()
+                entries = _REPORT_ENTRY.findall(text)
+                if not entries or "".join(f"{l}:{g}" for l, g in entries).replace(" ", "") != text.replace(" ", ""):
+                    rep.problem(f"{st.full_name}: reports {text!r} not understood")
+                    continue
+                for label, grade in entries:
+                    label = label.strip()
                     try:
                         put("report", rec.get("reports_date"), scale.validate(grade), label)
                     except ValueError as e:

@@ -37,7 +37,7 @@ def make_legacy(d):
               "reports text, oral_date text, result text)")
     e.executemany("INSERT INTO exams VALUES (?,?,?,?,?,?,?)", [
         (100001, "20260120", "27", "20251201", "Pendolo:B+ Ottica:A", "20260201", "28"),
-        (100004, "20260120", "30L", None, None, None, None),
+        (100004, "20260120", "31", "20251201", "Tubo Acustico:A/A- Molla:B", None, None),
     ])
     e.commit(); e.close()
 
@@ -63,7 +63,9 @@ def test_migrate_legacy(tmp_path, cfg):
     ex = {r.student.matricola: r for r in analysis.exam_table(conn, "2025/26", cfg)}
     assert ex["100001"].written == "27 (2026-01-20)" and ex["100001"].report_points == 57
     assert ex["100001"].oral == "28 (2026-02-01)"
-    assert ex["100004"].written.startswith("30L")
+    assert ex["100004"].written.startswith("30L")  # old code stored 30L as 31
+    assert ex["100004"].reports == "Molla:B Tubo Acustico:A/A-"
+    assert ex["100004"].report_points == 26 + 29.5
 
     # re-running changes nothing
     again = go()

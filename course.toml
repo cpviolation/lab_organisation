@@ -24,6 +24,12 @@ report_scale = ["A+", "A", "A-", "A-/B+",
                 "C+", "C", "C-", "C-/D+",
                 "D+", "D", "D-", "E"]
 
+# Grades written in other forms, mapped to a grade of the scale.
+# Any "X/Y" of two grades in the scale (e.g. "A/A-") is accepted and worth their average.
+[exams.report_aliases]
+"A--" = "A-/B+"
+"A--/B+" = "A-/B+"
+
 [excel]
 # Attendance register exported from the e-learning platform
 name_column = "Nome"
