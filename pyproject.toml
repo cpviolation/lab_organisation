@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+gui = ["streamlit>=1.40"]
 
 [project.scripts]
 lab = "labcourse.cli:run"

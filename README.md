@@ -81,6 +81,19 @@ group change does not alter grades already earned.
 Attendance fraction = hours attended (codes in `present_codes`) / hours of the sessions held so far,
 with the denominator capped at `max_counted_hours`.
 
+## Graphical interface
+
+```bash
+lab gui
+```
+
+opens the browser on a local page (http://localhost:8501) with the same functions as the command
+line: student lists and search across cohorts, imports with preview (nothing is written until you
+press *Importa*; a backup is made first), lessons, attendance with the students below the minimum
+highlighted, signature sheets and attendance PDFs, students admitted to the oral, and CSV/Excel
+downloads. It reads `course.toml` from the current folder (or `-c`/`LAB_CONFIG`). Stop it with
+Ctrl+C. It needs `streamlit`, installed by `setup.sh` or `pip install -e '.[gui]'`.
+
 ## Migrating from the old scripts
 
 The previous `lborg` scripts have been removed (they are in the git history before this

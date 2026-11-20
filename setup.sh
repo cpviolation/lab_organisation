@@ -14,12 +14,12 @@ if [ ! -d "$VENV_DIR" ]; then
     source "$VENV_DIR/bin/activate"
     
     pip install --upgrade pip
-    pip install -e "$PROJECT_ROOT[dev]"
+    pip install -e "$PROJECT_ROOT[dev,gui]"
     
     set +e  # Disable strict error checking after installation is successful
 else
     source "$VENV_DIR/bin/activate"
-    pip install -e "$PROJECT_ROOT[dev]"
+    pip install -e "$PROJECT_ROOT[dev,gui]"
 fi
 
 export VIRTUAL_ENV="$VENV_DIR"

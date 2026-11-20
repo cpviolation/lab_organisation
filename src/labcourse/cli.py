@@ -451,6 +451,33 @@ def migrate_legacy_cmd(
     )
 
 
+@app.command("gui")
+def gui_cmd(
+    port: int = typer.Option(8501, help="Port for the web interface."),
+    browser: bool = typer.Option(True, help="Open the browser automatically."),
+) -> None:
+    """Open the graphical interface in the browser."""
+    import os
+    import subprocess
+    import sys
+    from importlib.util import find_spec
+
+    if find_spec("streamlit") is None:
+        fail("the GUI needs streamlit: pip install -e '.[gui]'")
+    if not state.config_path.exists():
+        fail(f"{state.config_path} not found. Run `lab init` or pass --config.")
+    script = Path(__file__).with_name("gui.py")
+    env = {**os.environ, "LAB_CONFIG": str(state.config_path.resolve())}
+    cmd = [sys.executable, "-m", "streamlit", "run", str(script), "--server.port", str(port),
+           "--server.headless", "false" if browser else "true", "--browser.gatherUsageStats", "false",
+           "--client.toolbarMode", "minimal"]
+    typer.echo(f"GUI on http://localhost:{port}  (Ctrl+C to stop)")
+    try:
+        subprocess.run(cmd, env=env, check=False)
+    except KeyboardInterrupt:
+        pass
+
+
 @app.command("backup")
 def backup_cmd() -> None:
     """Make a timestamped copy of the database now."""
