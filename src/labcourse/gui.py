@@ -353,10 +353,15 @@ def page_exams(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> Non
     with tab_el:
         ids_text = st.text_input("Matricole (facoltativo)", placeholder="incolla le matricole separate da spazi o virgole")
         ids = split_ids([ids_text]) if ids_text else []
-        c1, c2, c3 = st.columns(3)
+        minimum = cfg.attendance.min_fraction
+        c1, c2 = st.columns(2)
         all_cohorts = c1.toggle("Tutte le coorti", value=bool(ids))
-        show_all = c2.toggle("Mostra anche i non ammessi", value=bool(ids))
-        pending = c3.toggle("Solo chi non ha ancora l'orale")
+        pending = c2.toggle("Solo chi non ha ancora l'orale")
+        c3, c4 = st.columns(2)
+        show_all = c3.toggle("Mostra anche i non ammessi", value=bool(ids),
+                             help="Per esempio chi non ha superato lo scritto")
+        show_low = c4.toggle(f"Mostra anche sotto il {minimum:.0%} di presenze", value=False,
+                             help="Studenti che non hanno raggiunto la soglia minima di presenze")
         selected = cohorts if all_cohorts else ([cohort] if cohort else [])
         if not selected:
             st.info("Nessuna coorte.")
@@ -365,6 +370,13 @@ def page_exams(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> Non
         for w in warnings:
             st.warning(w)
         shown = rows if show_all else [r for r in rows if r.eligible]
+        if not show_low:
+            hidden = [r for r in shown if r.attendance < minimum]
+            shown = [r for r in shown if r.attendance >= minimum]
+            if hidden:
+                st.caption(f"{len(hidden)} studenti nascosti perché sotto il {minimum:.0%} di presenze "
+                           f"({', '.join(r.student.full_name for r in hidden[:5])}"
+                           f"{', …' if len(hidden) > 5 else ''}).")
         if pending:
             shown = [r for r in shown if r.oral == "-"]
         m1, m2 = st.columns(2)
