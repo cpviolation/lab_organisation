@@ -68,12 +68,26 @@ lab exams eligible                        # admitted to the oral; --all to inclu
 lab exams eligible --format xlsx          # for the department office
 lab exams eligible -m 100001 100002       # only these students, searched in every cohort
 lab exams eligible --cohort all           # every cohort (ids not found are reported as warnings)
-lab exams orals data/raw/exams_20261117.json             # oral list for the students registered
-lab exams orals data/raw/exams_20261117.json -f pdf      # for that written appello (file read, not imported)
+
+# written appelli: registered students and their marks
+lab appelli import data/raw/iscritti_esse3.xlsx          # Esse3/e-learning list (XLSX, XLS, CSV), with or
+lab appelli import data/raw/exams_20261117.json          #   without marks, or the results JSON
+lab appelli add --date 2026-11-17 -m 100001 100002       # register by hand (also `lab appelli remove`)
+lab appelli list
+lab appelli show                                         # summary of the latest appello (-d for another)
+lab appelli show -f pdf                                  # printable summary
+lab appelli show --oral -f pdf                           # oral exam sheet: admitted students only
 
 lab students search --surname dangelo
 lab students list --format csv
 ```
+
+An appello keeps every registered student, also those who are not in the database
+(other turni or years): their name and mark come from the imported list. Marks of
+students in the database are also stored as written results, so they count for the
+admission to the oral. In an Esse3 export the header row is found automatically and
+words such as *Assente*, *Ritirato*, *Respinto* and *30 e lode* are understood; the appello
+date is taken from the title block or the file name, or given with `--date`.
 
 Marks are stored as written: numbers 0–30, `30L` (cum laude), `A` (absent), `R` (withdrawn),
 `I` (insufficient). Every exam sitting is kept; `exams.written_policy` decides whether the best or the

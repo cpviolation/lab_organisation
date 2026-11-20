@@ -121,9 +121,11 @@ def exam_table_multi(
 
 
 @dataclass(frozen=True)
-class OralRow:
+class AppelloRow:
     matricola: str
-    appello_mark: str                 # mark of this student at the appello
+    surname: str
+    name: str
+    appello_mark: str                 # mark at this appello, "" if not marked yet
     exam: ExamRow | None              # None when the student is not in the database
     cohorts: tuple[str, ...] = ()
 
@@ -135,42 +137,47 @@ class OralRow:
     def reason(self) -> str:
         return self.exam.reasons if self.exam else "not in the database"
 
+    @property
+    def full_name(self) -> str:
+        return f"{self.surname} {self.name}".strip() or self.matricola
 
-def oral_table(
-    conn: sqlite3.Connection, cfg: Config, appello_date: str, marks: dict[str, Mark],
-    all_marks: dict[str, dict[str, Mark]] | None = None,
-) -> list[OralRow]:
-    """Students registered for a written appello (``marks``: matricola -> mark) and
-    whether they are admitted to the oral.
 
-    Marks from the file are counted together with those in the database without
-    being written. ``all_marks`` (date -> marks) adds the other dates of the same file.
-    Each student is evaluated in their most recent cohort.
+def appello_table(
+    conn: sqlite3.Connection, cfg: Config, appello_date: str,
+    registered: list[repo.Registration] | None = None,
+) -> list[AppelloRow]:
+    """Students registered for a written appello and whether they are admitted to the oral.
+
+    ``registered`` defaults to the registrations stored for the appello. Their marks
+    count together with the written results in the database. Each student is
+    evaluated in their most recent cohort.
     """
-    extra: dict[str, list[tuple[str, Mark]]] = {}
-    for d, by_student in (all_marks or {appello_date: marks}).items():
-        for m, mark in by_student.items():
-            extra.setdefault(str(m), []).append((d, mark))
-    for m, mark in marks.items():
-        extra.setdefault(str(m), [])
-        if (appello_date, mark) not in extra[str(m)]:
-            extra[str(m)].append((appello_date, mark))
+    if registered is None:
+        registered = repo.registrations(conn, repo.appello_id(conn, appello_date))
+    extra = {r.matricola: [(appello_date, Mark.parse(r.mark))] for r in registered if r.mark}
 
-    # group the students by their most recent cohort
     by_cohort: dict[str, list[str]] = {}
     cohorts_of: dict[str, tuple[str, ...]] = {}
-    for m in marks:
-        enrolments = sorted({r.cohort for r in repo.search_students(conn, matricole=[str(m)]) if r.cohort})
-        cohorts_of[str(m)] = tuple(enrolments)
+    for r in registered:
+        enrolments = sorted({x.cohort for x in repo.search_students(conn, matricole=[r.matricola]) if x.cohort})
+        cohorts_of[r.matricola] = tuple(enrolments)
         if enrolments:
-            by_cohort.setdefault(enrolments[-1], []).append(str(m))
+            by_cohort.setdefault(enrolments[-1], []).append(r.matricola)
     exam_rows: dict[str, ExamRow] = {}
     for cohort, ids in by_cohort.items():
-        for r in exam_table(conn, cohort, cfg, matricole=ids, extra_written=extra):
-            exam_rows[r.student.matricola] = r
+        for row in exam_table(conn, cohort, cfg, matricole=ids, extra_written=extra):
+            exam_rows[row.student.matricola] = row
 
-    rows = [OralRow(str(m), mark.raw, exam_rows.get(str(m)), cohorts_of[str(m)]) for m, mark in marks.items()]
-    rows.sort(key=lambda r: (r.exam is None,
-                             (r.exam.student.surname.casefold(), r.exam.student.name.casefold()) if r.exam else ("", ""),
-                             r.matricola))
-    return rows
+    out = []
+    for r in registered:
+        e = exam_rows.get(r.matricola)
+        out.append(AppelloRow(
+            r.matricola,
+            e.student.surname if e else (r.surname or ""),
+            e.student.name if e else (r.name or ""),
+            r.mark or "",
+            e, cohorts_of.get(r.matricola, ()),
+        ))
+    # students not in the database and without a name go last
+    out.sort(key=lambda x: (x.exam is None and not x.surname, x.surname.casefold(), x.name.casefold(), x.matricola))
+    return out

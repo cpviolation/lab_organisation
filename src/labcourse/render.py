@@ -10,7 +10,7 @@ from typing import Iterable, Sequence
 import jinja2
 from tabulate import tabulate
 
-from .analysis import AttendanceRow, ExamRow, OralRow
+from .analysis import AppelloRow, AttendanceRow, ExamRow
 from .repo import StudentRow
 from .rules import SessionInfo
 
@@ -34,7 +34,20 @@ def _env() -> jinja2.Environment:
         undefined=jinja2.StrictUndefined,
     )
     env.filters["tex"] = tex_escape
+    env.filters["motivo"] = motivo
     return env
+
+
+def motivo(reason: str) -> str:
+    """Italian wording of the eligibility reasons produced by the rules."""
+    out = []
+    for part in [p.strip() for p in reason.split(";") if p.strip()]:
+        part = (part.replace("no written exam", "scritto mancante")
+                    .replace("not in the database", "non nel database")
+                    .replace("attendance", "presenze")
+                    .replace("written", "scritto"))
+        out.append(part)
+    return "; ".join(out)
 
 
 def chunk_groups(
@@ -130,35 +143,37 @@ def exam_records(rows: list[ExamRow], with_cohort: bool = False) -> list[dict]:
     ]
 
 
-def oral_records(rows: list[OralRow], with_cohort: bool = True) -> list[dict]:
+def appello_records(rows: list[AppelloRow], with_cohort: bool = True) -> list[dict]:
     out = []
     for i, r in enumerate(rows, start=1):
         e = r.exam
-        rec = {"n.": i,
-               "cognome": e.student.surname if e else "?",
-               "nome": e.student.name if e else "?",
-               "matricola": r.matricola}
+        rec = {"n.": i, "cognome": r.surname or "?", "nome": r.name or "?", "matricola": r.matricola}
         if with_cohort:
             rec["coorte"] = ", ".join(r.cohorts) or "-"
         rec.update({
             "gruppo": e.student.lab_group if e and e.student.lab_group is not None else "",
             "presenza %": round(e.attendance * 100) if e else "",
-            "scritto appello": r.appello_mark,
+            "scritto appello": r.appello_mark or "-",
             "scritto valido": e.written if e else "-",
             "punti relazioni": f"{e.report_points:g}" if e and e.report_points is not None else "",
             "orale": e.oral if e else "-",
             "ammesso": "sì" if r.eligible else "no",
-            "motivo": r.reason,
+            "motivo": motivo(r.reason),
         })
         out.append(rec)
     return out
 
 
-def orals_tex(rows: list[OralRow], title: str, appello_date: str, max_rows: int) -> str:
-    """Printable oral sheet: admitted students with empty columns for the oral mark and notes."""
+def appello_tex(rows: list[AppelloRow], title: str, appello_date: str, max_rows: int, oral: bool) -> str:
+    """Printable appello sheet.
+
+    ``oral=True``: oral exam sheet (pass only admitted students) with empty Orale/Note columns.
+    ``oral=False``: summary of every registered student with marks and admission.
+    """
     tables = [rows[i:i + max_rows] for i in range(0, len(rows), max_rows)] or [[]]
-    return _env().get_template("orals.tex.j2").render(
-        title=title, date=appello_date, tables=tables, offset=[i * max_rows for i in range(len(tables))],
+    return _env().get_template("appello.tex.j2").render(
+        title=title, date=appello_date, tables=tables, oral=oral,
+        offset=[i * max_rows for i in range(len(tables))],
     )
 
 

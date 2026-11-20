@@ -348,9 +348,7 @@ def page_signature(cfg: Config, conn: sqlite3.Connection, cohort: str | None) ->
 
 def page_exams(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
     st.header("Esami")
-    tab_el, tab_orals, tab_list = st.tabs(["Ammessi all'orale", "Tabella orali per appello", "Appelli e relazioni"])
-    with tab_orals:
-        orals_tab(cfg, conn)
+    tab_el, tab_list = st.tabs(["Ammessi all'orale", "Esami e relazioni registrati"])
     cohorts = repo.list_cohorts(conn)
     with tab_el:
         ids_text = st.text_input("Matricole (facoltativo)", placeholder="incolla le matricole separate da spazi o virgole")
@@ -407,57 +405,140 @@ def page_exams(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> Non
                          hide_index=True, width="stretch")
 
 
-def orals_tab(cfg: Config, conn: sqlite3.Connection) -> None:
-    st.caption("Carica il file JSON con i risultati dello scritto: gli iscritti all'appello sono gli studenti "
-               "presenti nel file. Il file viene solo letto, non importato; i suoi voti si sommano a quelli "
-               "già nel database.")
-    upload = st.file_uploader("Risultati dello scritto (JSON)", type=["json"], key="orals-upload")
+def page_appelli(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
+    st.header("Appelli")
+    appelli = repo.list_appelli(conn)
+    labels = {r["date"]: f"{r['date'][8:]}/{r['date'][5:7]}/{r['date'][:4]} — {r['iscritti']} iscritti, "
+                         f"{r['con_voto']} con voto" for r in appelli}
+    tab_sum, tab_imp, tab_edit = st.tabs(["Iscritti e riepilogo", "Importa iscritti e voti", "Aggiungi o rimuovi"])
+
+    with tab_imp:
+        appello_import_tab(cfg)
+
+    with tab_edit:
+        c1, c2 = st.columns([1, 2])
+        day = c1.date_input("Data dell'appello", value=date.today(), format="DD/MM/YYYY", key="edit-date")
+        ids_text = c2.text_input("Matricole", placeholder="100001 100002 oppure 100001,100002", key="edit-ids")
+        ids = split_ids([ids_text]) if ids_text else []
+        b1, b2, _ = st.columns([1, 1, 2])
+        if b1.button("Iscrivi", type="primary", disabled=not ids, width="stretch"):
+            iso = day.isoformat()
+
+            def add(c):
+                rep = ImportReport(f"Appello {iso}")
+                try:
+                    aid = repo.appello_id(c, iso)
+                except LookupError:
+                    aid = repo.appello_id(c, iso, create=True)
+                    rep.count("nuovo appello")
+                for m in ids:
+                    outcome, _ = repo.upsert_registration(c, aid, m)
+                    rep.count("iscritti" if outcome == "new" else "già iscritti")
+                    if repo.student_by_matricola(c, m) is None:
+                        rep.problem(f"matricola {m} non presente nel database (iscritta comunque)")
+                return rep
+
+            run_write(cfg, add, dry_run=False)
+        if b2.button("Rimuovi", disabled=not ids, width="stretch"):
+            iso = day.isoformat()
+
+            def remove(c):
+                rep = ImportReport(f"Appello {iso}")
+                aid = repo.appello_id(c, iso)
+                for m in ids:
+                    if repo.remove_registration(c, aid, m):
+                        rep.count("rimossi")
+                    else:
+                        rep.problem(f"matricola {m} non iscritta")
+                return rep
+
+            run_write(cfg, remove, dry_run=False)
+
+    with tab_sum:
+        if not appelli:
+            st.info("Nessun appello: importa la lista degli iscritti o i risultati dello scritto.")
+            return
+        dates = [r["date"] for r in reversed(appelli)]
+        iso = st.selectbox("Appello", dates, format_func=labels.get, key="appello-date")
+        rows = analysis.appello_table(conn, cfg, iso)
+        admitted = [r for r in rows if r.eligible]
+        unknown = [r for r in rows if r.exam is None]
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Iscritti", len(rows))
+        m2.metric("Con voto", sum(bool(r.appello_mark) for r in rows))
+        m3.metric("Ammessi all'orale", len(admitted))
+        m4.metric("Non nel database", len(unknown))
+        only_admitted = st.toggle("Solo gli ammessi all'orale", key="appello-admitted")
+        if unknown:
+            st.caption("Studenti non presenti nel database (nessun dato su presenze e relazioni): "
+                       + ", ".join(r.full_name if r.surname else r.matricola for r in unknown))
+        shown = admitted if only_admitted else rows
+        records = render.appello_records(shown)
+        df = pd.DataFrame(records)
+        if df.empty:
+            st.info("Nessuno studente da mostrare.")
+        else:
+            st.dataframe(
+                df.style.map(lambda v: "color: #1e8449; font-weight: 600" if v == "sì"
+                             else ("color: #c0392b" if v == "no" else ""), subset=["ammesso"]),
+                hide_index=True, width="stretch",
+            )
+        download_buttons(records, f"{iso}_appello", f"appello-{iso}")
+        p1, p2 = st.columns(2)
+        with p1:
+            pdf_button("PDF riepilogo appello",
+                       lambda: render.appello_tex(shown, cfg.title, iso, cfg.rows_per_table, oral=False),
+                       cfg.output_dir, f"{iso}_appello", f"appello-pdf-{iso}")
+        with p2:
+            if admitted:
+                pdf_button("PDF tabella per l'orale",
+                           lambda: render.appello_tex(admitted, cfg.title, iso, cfg.rows_per_table, oral=True),
+                           cfg.output_dir, f"{iso}_orali", f"orali-pdf-{iso}")
+
+
+def appello_import_tab(cfg: Config) -> None:
+    st.caption("Lista degli iscritti esportata da Esse3 o dall'e-learning (Excel o CSV, con o senza voti), "
+               "oppure il JSON con i risultati dello scritto. Chi ha un voto ed è nel database lo riceve "
+               "anche tra i risultati dello scritto, così conta per l'ammissione all'orale.")
+    upload = st.file_uploader("File", type=["xlsx", "xls", "csv", "json"], key="appello-upload")
     if not upload:
         return
     path = save_upload(upload)
     try:
-        by_date, problems = importers.read_marks_file(path)
+        _appello_import_form(cfg, upload, path)
+    finally:
+        shutil.rmtree(path.parent, ignore_errors=True)
+
+
+def _appello_import_form(cfg: Config, upload, path: Path) -> None:
+    sheet = None
+    found = None
+    try:
+        if path.suffix.lower() in (".xlsx", ".xls"):
+            sheets = importers.excel_sheets(path)
+            sheet = st.selectbox("Foglio", sheets) if len(sheets) > 1 else sheets[0]
+        if path.suffix.lower() != ".json":
+            rows, found, problems = importers.read_registration_table(path, sheet)
+            st.caption(f"{len(rows)} studenti nel file, {sum(r.mark is not None for r in rows)} con voto"
+                       + (f"; data trovata: {found}" if found else "; data non trovata nel file"))
     except ValueError as e:
         st.error(str(e))
         return
-    finally:
-        shutil.rmtree(path.parent, ignore_errors=True)
-    for p in problems:
-        st.warning(p)
-    if not by_date:
-        st.error("Nessun voto trovato nel file.")
-        return
-    dates = sorted(by_date, reverse=True)
-    c1, c2 = st.columns(2)
-    iso = c1.selectbox("Appello", dates, format_func=lambda d: f"{d[8:]}/{d[5:7]}/{d[:4]} ({len(by_date[d])} iscritti)")
-    show_all = c2.toggle("Mostra anche i non ammessi", value=True, key="orals-all")
-    rows = analysis.oral_table(conn, cfg, iso, by_date[iso], all_marks=by_date)
-    admitted = [r for r in rows if r.eligible]
-    unknown = [r.matricola for r in rows if r.exam is None]
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Iscritti all'appello", len(rows))
-    m2.metric("Ammessi all'orale", len(admitted))
-    m3.metric("Non nel database", len(unknown))
-    if unknown:
-        st.warning("Matricole non presenti nel database (nessun dato su presenze e relazioni): "
-                   + ", ".join(unknown))
-    records = render.oral_records(rows if show_all else admitted)
-    df = pd.DataFrame(records)
-    if df.empty:
-        st.info("Nessuno studente da mostrare.")
+    if path.suffix.lower() == ".json":
+        appello_date = None
+        st.caption("Ogni data del file diventa un appello.")
     else:
-        st.dataframe(
-            df.style.map(lambda v: "color: #1e8449; font-weight: 600" if v == "sì"
-                         else ("color: #c0392b" if v == "no" else ""), subset=["ammesso"]),
-            hide_index=True, width="stretch",
-        )
-    download_buttons(records, f"{iso}_orali", "orals")
-    if admitted:
-        pdf_button(
-            "Genera PDF per l'orale (solo ammessi)",
-            lambda: render.orals_tex(admitted, cfg.title, iso, cfg.rows_per_table),
-            cfg.output_dir, f"{iso}_orali", f"orals-pdf-{iso}",
-        )
+        default = date.fromisoformat(found) if found else date.today()
+        appello_date = st.date_input("Data dell'appello", value=default, format="DD/MM/YYYY",
+                                     key=f"appello-import-date-{upload.name}-{sheet}").isoformat()
+    strict = st.checkbox("Modalità rigorosa: non scrivere nulla se ci sono problemi", key="appello-strict")
+    c1, c2, _ = st.columns([1, 1, 2])
+    fn = lambda c: importers.import_appello(c, path, appello_date, sheet)  # noqa: E731
+    if c1.button("Anteprima", width="stretch", key="appello-preview"):
+        run_write(cfg, fn, dry_run=True)
+    if c2.button("Importa", type="primary", width="stretch", key="appello-import"):
+        if run_write(cfg, fn, dry_run=False, strict=strict):
+            st.caption("Vai alla scheda *Iscritti e riepilogo* per vedere l'appello.")
 
 
 def page_settings(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
@@ -492,6 +573,7 @@ PAGES = {
     "✅ Presenze": page_attendance,
     "✍️ Foglio firme": page_signature,
     "📝 Esami": page_exams,
+    "🗓️ Appelli": page_appelli,
     "⚙️ Impostazioni": page_settings,
 }
 

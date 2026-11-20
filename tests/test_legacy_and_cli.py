@@ -169,52 +169,109 @@ def test_cli_eligible_across_cohorts_with_warnings(course):
     assert "6 students" not in out and "of 7 students" in out  # 5 + 2 enrolments (Bruce in both)
 
 
-def _appello(tmp_path):
-    f = tmp_path / "appello.json"
-    # 100001 passes now; 100002 absent now but passed before (in the db); 100003 fails now;
-    # 100004 has a mark only in this file (not imported); 555 is not in the database
-    f.write_text('{"2026-03-01": {"100001": "25", "100002": "A", "100003": "15", "100004": "28", "555": "30"}}')
-    return f
+
+def _esse3_xlsx(path):
+    """An Esse3-like export: title block above the table, words for marks, a footer line."""
+    import pandas as pd
+    rows = [
+        ["Università degli Studi", None, None, None, None, None],
+        ["Lista iscritti - Data appello: 01/03/2026", None, None, None, None, None],
+        [None, None, None, None, None, None],
+        ["#", "Matricola", "Cognome", "Nome", "Email", "Esito"],
+        [1, "100001", "Clapton", "Eric", "e.clapton@example.org", "25"],
+        [2, "100002", "Baker", "Ginger", "g.baker@example.org", "Assente"],
+        [3, "100003", "Bruce", "Jack", "j.bruce@example.org", "Respinto"],
+        [4, "100004", "D'Angelo", "Pino", "p.dangelo@example.org", "30 e lode"],
+        [5, "555", "Altro", "Turno", "a.t@example.org", "28"],
+        [6, "100005", "Rossi", "Nicolò", "n.rossi@example.org", None],   # registered, no mark yet
+        ["Totale iscritti: 6", None, None, None, None, None],
+    ]
+    pd.DataFrame(rows).to_excel(path, index=False, header=False)
+    return path
 
 
-def test_oral_table_counts_file_marks_without_importing(course, tmp_path):
-    from labcourse import analysis, db, importers
+def test_read_esse3_list(tmp_path):
+    from labcourse import importers
+    rows, found, problems = importers.read_registration_table(_esse3_xlsx(tmp_path / "iscritti.xlsx"))
+    assert found == "2026-03-01" and not problems
+    assert [r.matricola for r in rows] == ["100001", "100002", "100003", "100004", "555", "100005"]
+    assert [r.mark for r in rows] == ["25", "A", "I", "30L", "28", None]
+    assert rows[4].surname == "Altro" and rows[4].email == "a.t@example.org"
+
+
+def test_appello_table(course, tmp_path):
+    from labcourse import analysis, db
     from labcourse.config import load_config
     ok(course, "cohort", "import", "students_2025.json")
     ok(course, "sessions", "add", "sessions.json")
     ok(course, "attendance", "import", "attendance.json")   # Baker (100002) absent -> 0%
     w = tmp_path / "w.json"
     w.write_text('{"2026-01-20": {"100002": "24", "100003": "20"}}')
-    ok(course, "exams", "import", str(w), "--kind", "written")
+    ok(course, "appelli", "import", str(w))
+    out = ok(course, "appelli", "import", str(_esse3_xlsx(tmp_path / "iscritti.xlsx")))
+    assert "6 registered" in out and "1 marks of students not in the database" in out
 
     cfg = load_config(tmp_path / "course.toml")
     conn = db.connect(cfg.database)
-    by_date, problems = importers.read_marks_file(_appello(tmp_path))
-    assert not problems
-    rows = {r.matricola: r for r in analysis.oral_table(conn, cfg, "2026-03-01", by_date["2026-03-01"])}
-    assert rows["100001"].eligible and rows["100001"].appello_mark == "25"
-    assert not rows["100002"].eligible and "attendance" in rows["100002"].reason  # passed before, 0% attendance
-    assert rows["100003"].eligible and rows["100003"].exam.written.startswith("20")  # best mark counts
-    assert rows["100004"].eligible and rows["100004"].exam.written.startswith("28")  # file mark counted
-    assert rows["555"].exam is None and not rows["555"].eligible
-    # nothing was written
-    assert conn.execute("SELECT COUNT(*) FROM assessment WHERE date = '2026-03-01'").fetchone()[0] == 0
+    rows = analysis.appello_table(conn, cfg, "2026-03-01")
+    by_m = {r.matricola: r for r in rows}
+    assert by_m["100001"].eligible and by_m["100001"].appello_mark == "25"
+    assert not by_m["100002"].eligible and "attendance" in by_m["100002"].reason  # passed before, 0% attendance
+    assert by_m["100003"].eligible and by_m["100003"].exam.written.startswith("20")  # best mark counts
+    assert by_m["100004"].eligible and by_m["100004"].exam.written.startswith("30L")
+    assert by_m["100005"].appello_mark == "" and not by_m["100005"].eligible       # registered, no mark
+    assert by_m["555"].exam is None and by_m["555"].surname == "Altro"             # kept from the list
+    # marks of known students were stored as written results too
+    assert conn.execute("SELECT COUNT(*) FROM result r JOIN assessment a ON a.id = r.assessment_id "
+                        "WHERE a.kind = 'written' AND a.date = '2026-03-01'").fetchone()[0] == 4
+    # re-importing changes nothing
+    again = ok(course, "appelli", "import", str(tmp_path / "iscritti.xlsx"))
+    assert "registered" not in again.replace("unchanged", "")
     conn.close()
 
 
-def test_cli_orals(course, tmp_path):
+def test_cli_appelli(course, tmp_path):
     ok(course, "cohort", "import", "students_2025.json")
     ok(course, "sessions", "add", "sessions.json")
     ok(course, "attendance", "import", "attendance.json")
-    f = _appello(tmp_path)
-    out = ok(course, "exams", "orals", str(f), "--all")
-    assert "5 registered, 2 admitted" in out and "555" in out
-    out = ok(course, "exams", "orals", str(f))
+    ok(course, "appelli", "import", str(_esse3_xlsx(tmp_path / "iscritti.xlsx")))
+    out = ok(course, "appelli", "list")
+    assert "2026-03-01" in out
+    out = ok(course, "appelli", "show")
+    assert "6 registered, 5 with a mark, 2 admitted" in out and "Altro" in out
+    out = ok(course, "appelli", "show", "--admitted")
     assert "Clapton" in out and "Baker" not in out
-    r = course.invoke(app, ["exams", "orals", str(f), "--date", "2026-01-01"])
-    assert r.exit_code == 1 and "not in" in r.output
-    ok(course, "exams", "orals", str(f), "--format", "xlsx")
-    assert (tmp_path / "output" / "2026-03-01_orali.xlsx").exists()
+    from labcourse.cli import expand_multi
+    ok(course, *expand_multi(["appelli", "add", "--date", "2026-03-01", "-m", "100003", "777"]))
+    out = ok(course, "appelli", "show")
+    assert "7 registered" in out
+    ok(course, "appelli", "remove", "--date", "2026-03-01", "-m", "777")
+    assert "6 registered" in ok(course, "appelli", "show")
+    r = course.invoke(app, ["appelli", "show", "--date", "2025-01-01"])
+    assert r.exit_code == 1 and "no appello" in r.output
+    ok(course, "appelli", "show", "-f", "xlsx")
+    assert (tmp_path / "output" / "2026-03-01_appello.xlsx").exists()
     if shutil.which("pdflatex"):
-        ok(course, "exams", "orals", str(f), "--format", "pdf")
+        ok(course, "appelli", "show", "-f", "pdf")
+        ok(course, "appelli", "show", "--oral", "-f", "pdf")
+        assert (tmp_path / "output" / "2026-03-01_appello.pdf").exists()
         assert (tmp_path / "output" / "2026-03-01_orali.pdf").exists()
+
+
+def test_appello_needs_a_date(course, tmp_path):
+    import pandas as pd
+    f = tmp_path / "lista.csv"
+    pd.DataFrame({"Matricola": ["1"], "Cognome": ["A"], "Nome": ["B"]}).to_csv(f, index=False)
+    r = course.invoke(app, ["appelli", "import", str(f)])
+    assert r.exit_code == 1 and "date" in r.output
+    ok(course, "appelli", "import", str(f), "--date", "2026-05-05")
+
+
+def test_read_csv_with_title_block(tmp_path):
+    from labcourse import importers
+    f = tmp_path / "iscritti.csv"
+    f.write_text("Data appello: 15/01/2027\n\nMatricola;Cognome;Nome;Esito\n1;Rossi;Anna;Assente\n2;Neri;Luca;27\n3;Bo;Ugo;\n",
+                 encoding="cp1252")
+    rows, found, problems = importers.read_registration_table(f)
+    assert found == "2027-01-15" and not problems
+    assert [(r.matricola, r.mark) for r in rows] == [("1", "A"), ("2", "27"), ("3", None)]

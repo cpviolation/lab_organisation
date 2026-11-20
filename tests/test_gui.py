@@ -20,7 +20,7 @@ def test_every_page_renders(course, monkeypatch, tmp_path):
     at = AppTest.from_file(GUI, default_timeout=30).run()
     assert not at.exception
     pages = at.sidebar.radio[0].options
-    assert len(pages) == 7
+    assert len(pages) == 8
     for page in pages:
         at.sidebar.radio[0].set_value(page).run()
         assert not at.exception, (page, at.exception)
@@ -56,10 +56,14 @@ def test_exams_hide_students_below_attendance(course, monkeypatch, tmp_path):
     assert not at.exception
 
 
-def test_orals_tab_renders(course, monkeypatch, tmp_path):
+
+def test_appelli_page_renders(course, monkeypatch, tmp_path):
+    from test_legacy_and_cli import _esse3_xlsx
     ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "appelli", "import", str(_esse3_xlsx(tmp_path / "iscritti.xlsx")))
     monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
     at = AppTest.from_file(GUI, default_timeout=30).run()
-    at.sidebar.radio[0].set_value("📝 Esami").run()
+    at.sidebar.radio[0].set_value("🗓️ Appelli").run()
     assert not at.exception
-    assert any("Tabella orali" in t.label for t in at.tabs)
+    assert at.metric[0].value == "6"            # registered
+    assert set(at.dataframe[0].value["matricola"]) >= {"100001", "555"}

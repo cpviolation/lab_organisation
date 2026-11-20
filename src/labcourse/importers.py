@@ -142,10 +142,15 @@ def load_records(path: str | Path) -> list[dict]:
     if suffix == ".csv":
         df = pd.read_csv(path, dtype=str, sep=None, engine="python")
     elif suffix in (".xlsx", ".xls"):
-        df = pd.read_excel(path, dtype=str)
+        df = pd.read_excel(path, dtype=str, engine=_excel_engine(path))
     else:
         raise ValueError(f"Unsupported file type: {path.suffix}")
     return [_lower_keys(r) for r in df.to_dict("records")]
+
+
+def _excel_engine(path: str | Path) -> str | None:
+    """openpyxl for .xlsx (pandas' current default, kept explicit); default engine otherwise."""
+    return "openpyxl" if Path(path).suffix.lower() == ".xlsx" else None
 
 
 def _first(rec: dict, *keys: str) -> Any:
@@ -320,7 +325,8 @@ def read_attendance_excel(path: str | Path, cfg: Config) -> tuple[list[Attendanc
     import pandas as pd
 
     fmt = cfg.excel
-    df = pd.read_excel(path, dtype={fmt.matricola_column: str} if fmt.matricola_column else None)
+    df = pd.read_excel(path, dtype={fmt.matricola_column: str} if fmt.matricola_column else None,
+                       engine=_excel_engine(path))
     if df.empty:
         raise ValueError(f"No data found in {path}")
     for col in (fmt.name_column, fmt.surname_column):
@@ -489,25 +495,247 @@ def import_reports(conn: sqlite3.Connection, path: str | Path, cohort_name: str,
     return rep
 
 
-def read_marks_file(path: str | Path) -> tuple[dict[str, dict[str, Mark]], list[str]]:
-    """Read a written/oral marks file without importing it.
+# ---------------------------------------------------------------- appelli (registrations and marks)
 
-    Returns ``{iso date: {matricola: Mark}}`` and a list of problems (invalid dates or marks).
+_MARK_WORDS = {
+    "assente": "A", "ass": "A", "ass.": "A",
+    "ritirato": "R", "ritirata": "R", "ritiro": "R", "rit": "R", "rit.": "R",
+    "insufficiente": "I", "respinto": "I", "respinta": "I", "non superato": "I", "bocciato": "I", "insuff": "I",
+}
+_NO_MARK = {"", "-", "--", "nan", "none", "iscritto", "iscritta", "prenotato", "prenotata"}
+
+
+def parse_exam_mark(value: Any) -> str | None:
+    """Mark as stored (``'27'``, ``'30L'``, ``'A'``…), or None for a registration without a mark.
+
+    Understands the words used in Esse3 exports (Assente, Ritirato, Respinto, 30 e lode…).
     """
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f'{path}: expected {{"<date>": {{"<matricola>": "<mark>"}}}}')
-    out: dict[str, dict[str, Mark]] = {}
-    problems = []
-    for d, marks in data.items():
-        try:
-            iso = parse_date(d)
-        except ValueError as e:
-            problems.append(str(e))
-            continue
-        for matricola, raw in marks.items():
+    if _is_blank(value):
+        return None
+    text = str(value).strip()
+    low = re.sub(r"\s+", " ", text.lower())
+    if low in _NO_MARK:
+        return None
+    if low in _MARK_WORDS:
+        return _MARK_WORDS[low]
+    if "lode" in low or low in ("30+", "30 +", "31"):
+        return "30L"
+    return Mark.parse(text).raw
+
+
+_COLUMN_SYNONYMS = {
+    "matricola": ("matricola", "matr", "matr.", "student id", "id studente"),
+    "surname": ("cognome", "surname", "last name"),
+    "name": ("nome", "name", "first name"),
+    "email": ("email", "e-mail", "indirizzo email", "indirizzoemail", "mail", "indirizzo e-mail"),
+    "mark": ("voto", "esito", "voto/esito", "risultato", "mark", "grade", "voto finale"),
+}
+
+
+def _find_column(columns: list[str], key: str) -> str | None:
+    norm = {c: re.sub(r"\s+", " ", str(c).strip().lower()) for c in columns}
+    for syn in _COLUMN_SYNONYMS[key]:
+        for c, n in norm.items():
+            if n == syn:
+                return c
+    if key in ("email", "mark"):  # looser match: "Email istituzionale", "Voto (/30)"
+        for c, n in norm.items():
+            if any(n.startswith(s) for s in _COLUMN_SYNONYMS[key]):
+                return c
+    return None
+
+
+@dataclass
+class RegistrationRow:
+    matricola: str
+    surname: str | None
+    name: str | None
+    email: str | None
+    mark: str | None
+
+
+def read_registration_table(
+    path: str | Path, sheet: str | int | None = None,
+) -> tuple[list[RegistrationRow], str | None, list[str]]:
+    """Registered students from an Esse3/e-learning list (XLSX, XLS or CSV).
+
+    The header row is found automatically (the first row with a "Matricola" column), so
+    exports with a title block above the table work. Returns rows, a date found in the
+    title block or sheet name (or None), and problems.
+    """
+    import pandas as pd
+
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        raw = _read_csv_table(path)
+        sheet_name = ""
+    elif suffix in (".xlsx", ".xls", ".ods"):
+        xl = pd.ExcelFile(path, engine=_excel_engine(path))
+        sheet_name = xl.sheet_names[0] if sheet is None else (
+            xl.sheet_names[sheet] if isinstance(sheet, int) else sheet)
+        if sheet_name not in xl.sheet_names:
+            raise ValueError(f"{path.name}: no sheet {sheet!r} (sheets: {', '.join(xl.sheet_names)})")
+        raw = pd.read_excel(xl, sheet_name=sheet_name, header=None, dtype=str, keep_default_na=False)
+    else:
+        raise ValueError(f"Unsupported file type for a registration list: {path.suffix}")
+
+    header_idx = None
+    for i in range(min(len(raw), 40)):
+        cells = [str(v) for v in raw.iloc[i].tolist()]
+        if _find_column(cells, "matricola") is not None:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError(f"{path.name}: no 'Matricola' column found")
+
+    # a date in the title block (e.g. "Data appello: 17/11/2026"), the sheet name or the file name
+    found_date = None
+    for text in [*(" ".join(map(str, raw.iloc[i].tolist())) for i in range(header_idx)), sheet_name, path.stem]:
+        found_date = find_date(text) or _compact_date(text)
+        if found_date:
+            break
+
+    header = [str(v).strip() for v in raw.iloc[header_idx].tolist()]
+    body = raw.iloc[header_idx + 1:]
+    cols = {k: _find_column(header, k) for k in _COLUMN_SYNONYMS}
+    idx = {k: header.index(c) for k, c in cols.items() if c is not None}
+    rows, problems = [], []
+    for n, (_, r) in enumerate(body.iterrows(), start=header_idx + 2):
+        values = r.tolist()
+        matricola = _clean_id(values[idx["matricola"]])
+        if not matricola:
+            continue  # blank or footer line
+        if not re.fullmatch(r"[0-9A-Za-z]+", matricola):
+            continue  # footer text such as "Totale iscritti: 23"
+        mark = None
+        if "mark" in idx:
             try:
-                out.setdefault(iso, {})[str(matricola).strip()] = Mark.parse(raw)
+                mark = parse_exam_mark(values[idx["mark"]])
             except ValueError as e:
-                problems.append(f"{iso} {matricola}: {e}")
-    return out, problems
+                problems.append(f"row {n} ({matricola}): {e}")
+        rows.append(RegistrationRow(
+            matricola,
+            _clean(values[idx["surname"]]) if "surname" in idx else None,
+            _clean(values[idx["name"]]) if "name" in idx else None,
+            _clean(values[idx["email"]]) if "email" in idx else None,
+            mark,
+        ))
+    return rows, found_date, problems
+
+
+def _read_csv_table(path: Path):
+    """CSV that may have a title block above the table: the delimiter is taken from the
+    header line (the one containing "matricola"), not from the first line."""
+    import csv
+    import io
+
+    import pandas as pd
+
+    raw = path.read_bytes()
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    lines = text.splitlines()
+    header = next((ln for ln in lines if "matricola" in ln.lower()), lines[0] if lines else "")
+    delim = max([";", ",", "\t", "|"], key=header.count)
+    rows = list(csv.reader(io.StringIO(text), delimiter=delim))
+    width = max((len(r) for r in rows), default=0)
+    return pd.DataFrame([r + [""] * (width - len(r)) for r in rows], dtype=str)
+
+
+def _compact_date(text: str) -> str | None:
+    """``exams_20261117`` -> 2026-11-17."""
+    m = re.search(r"(20\d{2})(\d{2})(\d{2})", str(text))
+    if not m:
+        return None
+    try:
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3))).isoformat()
+    except ValueError:
+        return None
+
+
+def excel_sheets(path: str | Path) -> list[str]:
+    import pandas as pd
+
+    return pd.ExcelFile(path, engine=_excel_engine(path)).sheet_names
+
+
+def import_appello(
+    conn: sqlite3.Connection, path: str | Path, appello_date: str | None = None, sheet: str | int | None = None,
+) -> list[ImportReport]:
+    """Register students for written appelli and record their marks.
+
+    * JSON results ``{"2026-11-17": {"<matricola>": "27"}}``: one appello per date.
+    * Esse3/e-learning list (XLSX/XLS/CSV): one appello, date from ``appello_date``
+      or found in the file. Rows without a mark only register the student.
+
+    Marks of students in the database are also stored as written results in their
+    most recent cohort, so they count for admission to the oral.
+    """
+    path = Path(path)
+    batches: dict[str, list[RegistrationRow]] = {}
+    problems: list[str] = []
+    if path.suffix.lower() == ".json":
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f'{path}: expected {{"<date>": {{"<matricola>": "<mark>"}}}}')
+        for d, marks in data.items():
+            try:
+                iso = parse_date(d)
+            except ValueError as e:
+                problems.append(str(e))
+                continue
+            if appello_date and iso != parse_date(appello_date):
+                continue
+            for m, raw in marks.items():
+                try:
+                    mark = parse_exam_mark(raw)
+                except ValueError as e:
+                    problems.append(f"{iso} {m}: {e}")
+                    continue
+                batches.setdefault(iso, []).append(RegistrationRow(str(m).strip(), None, None, None, mark))
+    else:
+        rows, found, problems = read_registration_table(path, sheet)
+        iso = parse_date(appello_date) if appello_date else found
+        if not iso:
+            raise ValueError(f"{path}: appello date not found in the file; give it explicitly")
+        batches[iso] = rows
+
+    reports = []
+    for iso, rows in sorted(batches.items()):
+        rep = ImportReport(f"Appello {iso}")
+        for p in problems:
+            rep.problem(p)
+        problems = []
+        try:
+            aid = repo.appello_id(conn, iso)
+        except LookupError:
+            aid = repo.appello_id(conn, iso, create=True)
+            rep.count("new appello")
+        for row in rows:
+            outcome, old = repo.upsert_registration(conn, aid, row.matricola, row.surname, row.name, row.email, row.mark)
+            rep.count({"new": "registered", "updated": "registrations updated", "same": "unchanged"}[outcome])
+            who = " ".join(x for x in (row.surname, row.name) if x) or row.matricola
+            if outcome == "new":
+                rep.change(f"{who} ({row.matricola}) registered" + (f", mark {row.mark}" if row.mark else ""))
+            elif outcome == "updated" and row.mark and row.mark != old:
+                rep.change(f"{who} ({row.matricola}): mark {old or '-'} -> {row.mark}")
+            if row.mark is None:
+                continue
+            cohort = repo.latest_cohort(conn, row.matricola)
+            if cohort is None:
+                rep.count("marks of students not in the database (kept in the appello only)")
+                continue
+            st = repo.student_by_matricola(conn, row.matricola)
+            assessment, _ = repo.assessment_id(conn, repo.cohort_id(conn, cohort), "written", iso)
+            res, _ = repo.set_result(conn, assessment, st.id, row.mark)
+            if res != "same":
+                rep.count("written results stored")
+        reports.append(rep)
+    if not reports:
+        raise ValueError(f"{path}: nothing to import" + (f" for {appello_date}" if appello_date else ""))
+    return reports
