@@ -52,6 +52,29 @@ def slug(cohort: str) -> str:
     return cohort.replace("/", "_")
 
 
+def frame(records: list[dict]) -> pd.DataFrame:
+    """DataFrame for ``st.dataframe``, with mixed-type columns made Arrow-compatible.
+
+    The render records use ``""`` for missing values next to numbers (e.g. ``gruppo``),
+    which Arrow cannot serialise. Columns whose non-empty values are all numbers become
+    nullable numeric columns; any other mixed column becomes text.
+    """
+    df = pd.DataFrame(records)
+    for col in df.columns:
+        if df[col].dtype != object:
+            continue
+        values = df[col][df[col].notna() & (df[col] != "")]
+        types = {type(v) for v in values}
+        if len(types) <= 1 and len(values) == df[col].notna().sum():
+            continue
+        if types and all(issubclass(t, (int, float)) and not issubclass(t, bool) for t in types):
+            num = pd.to_numeric(df[col].replace("", None))
+            df[col] = num.astype("Int64") if all(issubclass(t, int) for t in types) else num
+        else:
+            df[col] = df[col].map(lambda v: "" if v is None or (isinstance(v, float) and pd.isna(v)) else str(v))
+    return df
+
+
 def download_buttons(records: list[dict], stem: str, key: str) -> None:
     """CSV and Excel download buttons for a table."""
     if not records:
@@ -155,7 +178,7 @@ def page_students(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> 
                 students = [s for s in students if s.lab_group == group]
             records = render.students_records(students)
             c2.metric("Studenti", len(records))
-            st.dataframe(pd.DataFrame(records), hide_index=True, width="stretch")
+            st.dataframe(frame(records), hide_index=True, width="stretch")
             download_buttons(records, f"{slug(cohort)}_studenti", "students")
     with tab_search:
         c1, c2, c3 = st.columns(3)
@@ -165,7 +188,7 @@ def page_students(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> 
         if ids or name or surname:
             rows = repo.search_students(conn, split_ids([ids]) if ids else None, name or None, surname or None)
             if rows:
-                st.dataframe(pd.DataFrame(render.students_records(rows)), hide_index=True,
+                st.dataframe(frame(render.students_records(rows)), hide_index=True,
                              width="stretch")
             else:
                 st.warning("Nessuno studente trovato.")
@@ -303,7 +326,7 @@ def page_attendance(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -
     only_below = st.toggle(f"Mostra solo chi è sotto il {minimum:.0%}")
     shown = below if only_below else rows
     records = render.attendance_records(sessions, shown)
-    df = pd.DataFrame(records)
+    df = frame(records)
     if not df.empty:
         styled = df.style.apply(
             lambda col: ["background-color: rgba(255, 80, 80, .25)" if v < minimum * 100 else "" for v in col],
@@ -383,7 +406,7 @@ def page_exams(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> Non
         m1.metric("Ammessi", sum(r.eligible for r in rows))
         m2.metric("Studenti considerati", len(rows))
         records = render.exam_records(shown, with_cohort=len(selected) > 1)
-        df = pd.DataFrame(records)
+        df = frame(records)
         if df.empty:
             st.info("Nessuno studente da mostrare.")
         else:
@@ -468,13 +491,20 @@ def page_appelli(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> N
         m2.metric("Con voto", sum(bool(r.appello_mark) for r in rows))
         m3.metric("Ammessi all'orale", len(admitted))
         m4.metric("Non nel database", len(unknown))
-        only_admitted = st.toggle("Solo gli ammessi all'orale", key="appello-admitted")
+        t1, t2 = st.columns(2)
+        only_admitted = t1.toggle("Solo gli ammessi all'orale", key="appello-admitted")
+        by_group = t2.radio("Ordina per", ["Cognome", "Gruppo"], horizontal=True,
+                            key="appello-order", help="Per gruppo: prima gli studenti degli anni "
+                            "accademici precedenti, poi quelli dell'anno più recente.") == "Gruppo"
+        if by_group:
+            rows = analysis.sort_appello(rows, by_group=True)
+            admitted = [r for r in rows if r.eligible]
         if unknown:
             st.caption("Studenti non presenti nel database (nessun dato su presenze e relazioni): "
                        + ", ".join(r.full_name if r.surname else r.matricola for r in unknown))
         shown = admitted if only_admitted else rows
         records = render.appello_records(shown)
-        df = pd.DataFrame(records)
+        df = frame(records)
         if df.empty:
             st.info("Nessuno studente da mostrare.")
         else:

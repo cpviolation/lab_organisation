@@ -147,7 +147,8 @@ def appello_records(rows: list[AppelloRow], with_cohort: bool = True) -> list[di
     out = []
     for i, r in enumerate(rows, start=1):
         e = r.exam
-        rec = {"n.": i, "cognome": r.surname or "?", "nome": r.name or "?", "matricola": r.matricola}
+        rec = {"n.": i, "cognome": r.surname or "?", "nome": r.name or "?", "matricola": r.matricola,
+               "email": r.email}
         if with_cohort:
             rec["coorte"] = ", ".join(r.cohorts) or "-"
         rec.update({

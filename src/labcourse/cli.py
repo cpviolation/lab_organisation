@@ -532,6 +532,7 @@ def appelli_show(
     date: Optional[str] = DateOpt,
     oral: bool = typer.Option(False, "--oral", help="Oral exam sheet: admitted students only, with empty Orale/Note columns."),
     show_all: bool = typer.Option(True, "--all/--admitted", help="All registered students (default) or only those admitted."),
+    by_group: bool = typer.Option(False, "--by-group", help="Order by lab group, former academic years first."),
     fmt: str = typer.Option("table", "--format", "-f", help="table, pdf, csv or xlsx"),
     output: Optional[Path] = typer.Option(None, "--output", "-o"),
 ) -> None:
@@ -539,7 +540,7 @@ def appelli_show(
     cfg = state.cfg
     conn = open_db()
     iso = resolve_appello(conn, date)
-    rows = analysis.appello_table(conn, cfg, iso)
+    rows = analysis.sort_appello(analysis.appello_table(conn, cfg, iso), by_group=by_group)
     admitted = [r for r in rows if r.eligible]
     shown = admitted if (oral or not show_all) else rows
     stem = f"{iso}_{'orali' if oral else 'appello'}"
