@@ -180,6 +180,24 @@ def appello_table(
             e, cohorts_of.get(r.matricola, ()),
             (e.student.email if e else None) or r.email or "",
         ))
-    # students not in the database and without a name go last
-    out.sort(key=lambda x: (x.exam is None and not x.surname, x.surname.casefold(), x.name.casefold(), x.matricola))
-    return out
+    return sort_appello(out)
+
+
+def sort_appello(rows: list[AppelloRow], by_group: bool = False) -> list[AppelloRow]:
+    """Appello rows in alphabetical order, or by lab group.
+
+    ``by_group=True``: students of former academic years first (oldest cohort first),
+    then the latest cohort; within a cohort by lab group (no group last), then by name.
+    Students not in the database go last either way, those without a name at the very end.
+    """
+    def name_key(x: AppelloRow) -> tuple:
+        return (x.exam is None and not x.surname, x.surname.casefold(), x.name.casefold(), x.matricola)
+
+    if not by_group:
+        return sorted(rows, key=name_key)
+
+    def group_key(x: AppelloRow) -> tuple:
+        group = x.exam.student.lab_group if x.exam else None
+        return (x.exam is None, x.cohorts[-1] if x.cohorts else "", group is None, group or 0, *name_key(x))
+
+    return sorted(rows, key=group_key)

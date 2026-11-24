@@ -278,3 +278,17 @@ def test_read_csv_with_title_block(tmp_path):
     rows, found, problems = importers.read_registration_table(f)
     assert found == "2027-01-15" and not problems
     assert [(r.matricola, r.mark) for r in rows] == [("1", "A"), ("2", "27"), ("3", None)]
+
+
+def test_sort_appello_by_group():
+    from types import SimpleNamespace
+    from labcourse.analysis import AppelloRow, sort_appello
+
+    def row(m, surname, cohort=None, group=None):
+        exam = SimpleNamespace(student=SimpleNamespace(lab_group=group)) if cohort else None
+        return AppelloRow(m, surname, "X", "", exam, (cohort,) if cohort else ())
+
+    rows = [row("1", "Abba", "2025/26", 2), row("2", "Bach", "2025/26", 1), row("3", "Cage", "2024/25", 3),
+            row("4", "Dufay", "2023/24", 5), row("5", "Elgar", "2025/26"), row("6", "Fauré"), row("7", "")]
+    assert [r.matricola for r in sort_appello(rows)] == ["1", "2", "3", "4", "5", "6", "7"]
+    assert [r.matricola for r in sort_appello(rows, by_group=True)] == ["4", "3", "2", "1", "5", "6", "7"]

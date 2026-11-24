@@ -491,7 +491,14 @@ def page_appelli(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> N
         m2.metric("Con voto", sum(bool(r.appello_mark) for r in rows))
         m3.metric("Ammessi all'orale", len(admitted))
         m4.metric("Non nel database", len(unknown))
-        only_admitted = st.toggle("Solo gli ammessi all'orale", key="appello-admitted")
+        t1, t2 = st.columns(2)
+        only_admitted = t1.toggle("Solo gli ammessi all'orale", key="appello-admitted")
+        by_group = t2.radio("Ordina per", ["Cognome", "Gruppo"], horizontal=True,
+                            key="appello-order", help="Per gruppo: prima gli studenti degli anni "
+                            "accademici precedenti, poi quelli dell'anno più recente.") == "Gruppo"
+        if by_group:
+            rows = analysis.sort_appello(rows, by_group=True)
+            admitted = [r for r in rows if r.eligible]
         if unknown:
             st.caption("Studenti non presenti nel database (nessun dato su presenze e relazioni): "
                        + ", ".join(r.full_name if r.surname else r.matricola for r in unknown))
