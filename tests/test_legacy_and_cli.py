@@ -221,6 +221,9 @@ def test_appello_table(course, tmp_path):
     assert by_m["100004"].eligible and by_m["100004"].exam.written.startswith("30L")
     assert by_m["100005"].appello_mark == "" and not by_m["100005"].eligible       # registered, no mark
     assert by_m["555"].exam is None and by_m["555"].surname == "Altro"             # kept from the list
+    assert by_m["555"].email == "a.t@example.org"                                   # email from the list
+    from labcourse import render
+    assert all(rec["email"] == r.email for rec, r in zip(render.appello_records(rows), rows))
     # marks of known students were stored as written results too
     assert conn.execute("SELECT COUNT(*) FROM result r JOIN assessment a ON a.id = r.assessment_id "
                         "WHERE a.kind = 'written' AND a.date = '2026-03-01'").fetchone()[0] == 4

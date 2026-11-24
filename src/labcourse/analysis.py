@@ -128,6 +128,7 @@ class AppelloRow:
     appello_mark: str                 # mark at this appello, "" if not marked yet
     exam: ExamRow | None              # None when the student is not in the database
     cohorts: tuple[str, ...] = ()
+    email: str = ""
 
     @property
     def eligible(self) -> bool:
@@ -177,6 +178,7 @@ def appello_table(
             e.student.name if e else (r.name or ""),
             r.mark or "",
             e, cohorts_of.get(r.matricola, ()),
+            (e.student.email if e else None) or r.email or "",
         ))
     # students not in the database and without a name go last
     out.sort(key=lambda x: (x.exam is None and not x.surname, x.surname.casefold(), x.name.casefold(), x.matricola))
