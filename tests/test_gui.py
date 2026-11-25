@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -15,12 +16,13 @@ def test_every_page_renders(course, monkeypatch, tmp_path):
     ok(course, "sessions", "add", "sessions.json")
     ok(course, "attendance", "import", "attendance.json")
     ok(course, "exams", "import", "written.json", "--kind", "written")
+    ok(course, "exams", "import", "reports.json", "--kind", "report")
     monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
 
     at = AppTest.from_file(GUI, default_timeout=30).run()
     assert not at.exception
     pages = at.sidebar.radio[0].options
-    assert len(pages) == 9
+    assert len(pages) == 10
     for page in pages:
         at.sidebar.radio[0].set_value(page).run()
         assert not at.exception, (page, at.exception)
@@ -67,3 +69,47 @@ def test_appelli_page_renders(course, monkeypatch, tmp_path):
     assert not at.exception
     assert at.metric[0].value == "6"            # registered
     assert set(at.dataframe[0].value["matricola"]) >= {"100001", "555"}
+
+
+def test_reports_page(course, monkeypatch, tmp_path):
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "groups", "assign", "groups.json")
+    ok(course, "exams", "import", "reports.json", "--kind", "report")
+    monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
+
+    at = AppTest.from_file(GUI, default_timeout=30).run()
+    at.sidebar.radio[0].set_value("📄 Relazioni").run()
+    assert not at.exception
+    at.selectbox(key="reports-group").set_value(1).run()
+    grid = at.dataframe[0].value
+    assert list(grid["esperienza"]) == ["Ottica", "Pendolo"]
+    assert set(grid.columns) == {"data", "esperienza", "Clapton Eric", "Bruce Jack"}
+    assert list(grid["Clapton Eric"]) == ["A", "B+"]
+
+    at.radio(key="reports-mode").set_value("Studente").run()
+    label = next(o for o in at.selectbox(key="reports-student").options if "Baker" in o)
+    at.selectbox(key="reports-student").set_value(label).run()
+    assert not at.exception
+    table = at.dataframe[0].value
+    assert list(table["voto"]) == ["C"] and list(table["punti"]) == ["22"]
+
+
+def test_reports_add_tab(course, monkeypatch, tmp_path):
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "groups", "assign", "groups.json")
+    ok(course, "exams", "import", "reports.json", "--kind", "report")
+    monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
+
+    at = AppTest.from_file(GUI, default_timeout=30).run()
+    at.sidebar.radio[0].set_value("📄 Relazioni").run()
+    assert not at.exception
+    at.selectbox(key="add-group").set_value(1)
+    at.date_input(key="add-date").set_value(date(2025, 12, 1)).run()
+    assert not at.exception
+    # the group members are preselected and the grades stored on that date prefilled,
+    # so saving right away is allowed and changes nothing
+    assert len(at.multiselect(key="add-students-1").value) == 2
+    assert not at.button(key="add-save").disabled
+    at.button(key="add-save").click().run()
+    assert not at.exception and not at.error
+    assert at.success and "Modifiche salvate" in at.success[0].value

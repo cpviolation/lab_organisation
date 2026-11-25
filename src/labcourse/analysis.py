@@ -201,3 +201,37 @@ def sort_appello(rows: list[AppelloRow], by_group: bool = False) -> list[Appello
         return (x.exam is None, x.cohorts[-1] if x.cohorts else "", group is None, group or 0, *name_key(x))
 
     return sorted(rows, key=group_key)
+
+
+@dataclass(frozen=True)
+class ReportGrade:
+    student: repo.StudentRow
+    date: str
+    experiment: str
+    grade: str
+    points: float | None  # None when the grade is not in the configured scale
+
+
+def report_grades(
+    conn: sqlite3.Connection, cohort_name: str, cfg: Config,
+    group: int | None = None, matricola: str | None = None,
+) -> list[ReportGrade]:
+    """Every report grade of the cohort, optionally for one lab group or one student.
+
+    Ordered by group, student, then date and experiment.
+    """
+    cohort = repo.cohort_id(conn, cohort_name)
+    students = repo.cohort_students(conn, cohort, group=group, order="group")
+    if matricola is not None:
+        students = [s for s in students if s.matricola == str(matricola)]
+    results = repo.cohort_results(conn, cohort, kind="report")
+    scale = cfg.exams.report_scale
+    out = []
+    for st in students:
+        for r in results.get(st.id, []):
+            try:
+                points = scale.points(r.raw_mark)
+            except ValueError:
+                points = None
+            out.append(ReportGrade(st, r.date, r.label, r.raw_mark, points))
+    return out

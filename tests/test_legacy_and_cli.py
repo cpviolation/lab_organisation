@@ -292,3 +292,63 @@ def test_sort_appello_by_group():
             row("4", "Dufay", "2023/24", 5), row("5", "Elgar", "2025/26"), row("6", "Fauré"), row("7", "")]
     assert [r.matricola for r in sort_appello(rows)] == ["1", "2", "3", "4", "5", "6", "7"]
     assert [r.matricola for r in sort_appello(rows, by_group=True)] == ["4", "3", "2", "1", "5", "6", "7"]
+
+
+def test_report_grades(course, tmp_path):
+    from labcourse import analysis, db, render
+    from labcourse.config import load_config
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "groups", "assign", "groups.json")
+    ok(course, "exams", "import", "reports.json", "--kind", "report")
+    cfg = load_config(tmp_path / "course.toml")
+    conn = db.connect(cfg.database)
+    from labcourse import repo
+    cohort = repo.list_cohorts(conn)[0]
+
+    group1 = analysis.report_grades(conn, cohort, cfg, group=1)
+    assert {g.student.surname for g in group1} == {"Clapton", "Bruce"}
+    assert sorted((g.experiment, g.grade, g.points) for g in group1 if g.student.surname == "Bruce") == \
+        [("Ottica", "A", 30), ("Pendolo", "B+", 27)]
+    pivot = render.report_group_records(group1)
+    assert [r["esperienza"] for r in pivot] == ["Ottica", "Pendolo"]
+    summary = {r["cognome"]: r for r in render.report_summary_records(group1)}
+    assert summary["Clapton"]["relazioni"] == 2 and summary["Clapton"]["punti totali"] == "57"
+
+    baker = next(g.student for g in analysis.report_grades(conn, cohort, cfg, group=2) if g.student.surname == "Baker")
+    one = analysis.report_grades(conn, cohort, cfg, matricola=baker.matricola)
+    assert [(g.experiment, g.grade, g.points) for g in one] == [("Pendolo", "C", 22)]
+    assert render.report_records(one)[0]["punti"] == "22"
+    conn.close()
+
+
+def test_set_report_grades(course, tmp_path):
+    from labcourse import analysis, db, importers, repo
+    from labcourse.config import load_config
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "groups", "assign", "groups.json")
+    ok(course, "exams", "import", "reports.json", "--kind", "report")
+    cfg = load_config(tmp_path / "course.toml")
+    conn = db.connect(cfg.database)
+    cohort = repo.list_cohorts(conn)[0]
+    group1 = [s.matricola for s in repo.cohort_students(conn, repo.cohort_id(conn, cohort), group=1)]
+
+    rep = importers.set_report_grades(conn, cohort, cfg, "2025-12-15", {"Molla": "a/a-", " Kater ": "B"}, group1)
+    assert not rep.problems and rep.counts["grades added"] == 4 and rep.counts["new experiments"] == 2
+    grades = {(g.student.matricola, g.experiment): g.grade
+              for g in analysis.report_grades(conn, cohort, cfg, group=1) if g.date == "2025-12-15"}
+    assert grades == {(m, e): v for m in group1 for e, v in (("Molla", "A/A-"), ("Kater", "B"))}
+    assert repo.report_experiments(conn, repo.cohort_id(conn, cohort)) == ["Kater", "Molla", "Ottica", "Pendolo"]
+
+    # changing a grade of one student only, and invalid input
+    rep = importers.set_report_grades(conn, cohort, cfg, "2025-12-15", {"Molla": "A"}, group1[:1])
+    assert rep.counts["grades changed"] == 1
+    rep = importers.set_report_grades(conn, cohort, cfg, "2025-12-15", {"Molla": "Z", "": "A"}, ["999"] + group1)
+    assert len(rep.problems) == 3 and "grades added" not in rep.counts and "grades changed" not in rep.counts
+    conn.close()
+
+
+def test_report_scale_choices():
+    from labcourse.marks import ReportScale
+    scale = ReportScale(("A", "A-", "A-/B+", "B+", "B"), top_points=30)
+    assert scale.choices() == ["A", "A/A-", "A-", "A-/B+", "B+", "B+/B", "B"]
+    assert all(scale.validate(c) == c for c in scale.choices())

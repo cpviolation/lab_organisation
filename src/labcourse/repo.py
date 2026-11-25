@@ -262,6 +262,16 @@ def assessment_id(conn: sqlite3.Connection, cohort: int, kind: str, date: str, l
     return aid, True
 
 
+def report_experiments(conn: sqlite3.Connection, cohort: int | None = None) -> list[str]:
+    """Names of the experiments with report grades, in one cohort or in all of them."""
+    sql = "SELECT DISTINCT label FROM assessment WHERE kind = 'report'"
+    params: list = []
+    if cohort is not None:
+        sql += " AND cohort_id = ?"
+        params.append(cohort)
+    return [r["label"] for r in conn.execute(sql + " ORDER BY label COLLATE NOCASE", params)]
+
+
 def set_result(conn: sqlite3.Connection, assessment: int, student_id: int, raw_mark: str) -> tuple[str, str | None]:
     """Returns (outcome, previous mark)."""
     row = conn.execute(

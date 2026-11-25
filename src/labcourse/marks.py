@@ -106,3 +106,10 @@ class ReportScale:
 
     def validate(self, grade: str) -> str:
         return self.canonical(grade)
+
+    def choices(self) -> list[str]:
+        """Grades to offer when entering a mark: the scale plus the halfway grades
+        ``X/Y`` between consecutive simple grades (e.g. ``A/A-``), best first."""
+        simple = [g for g in self.grades if "/" not in g]
+        options = set(self.grades) | {f"{a}/{b}" for a, b in zip(simple, simple[1:])}
+        return sorted(options, key=lambda g: (-self.points(g), g))
