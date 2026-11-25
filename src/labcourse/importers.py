@@ -479,20 +479,61 @@ def import_reports(conn: sqlite3.Connection, path: str | Path, cohort_name: str,
             if not members:
                 rep.problem(f"{iso}: group {group} has no students")
                 continue
-            for experiment, grade in grades.items():
-                try:
-                    g = scale.validate(grade)
-                except ValueError as e:
-                    rep.problem(f"{iso} group {group} {experiment}: {e}")
-                    continue
-                aid, new = repo.assessment_id(conn, cohort, "report", iso, str(experiment))
-                if new:
-                    rep.count("new experiments")
-                for st in members:
-                    outcome, old = repo.set_result(conn, aid, st.id, g)
-                    rep.count({"new": "grades added", "updated": "grades changed", "same": "unchanged"}[outcome])
-                    if outcome != "same":
-                        rep.change(f"{iso} {experiment} {st.full_name}: {old or '-'} -> {g}")
+            _store_report_grades(conn, cohort, scale, iso, grades, members, rep, f"group {group}")
+    return rep
+
+
+def _store_report_grades(
+    conn: sqlite3.Connection, cohort: int, scale, iso: str, grades: dict[str, str],
+    students: list[repo.StudentRow], rep: ImportReport, where: str,
+) -> None:
+    at = f"{iso} {where}".strip()
+    for experiment, grade in grades.items():
+        experiment = str(experiment).strip()
+        if not experiment:
+            rep.problem(f"{at}: missing experiment name")
+            continue
+        try:
+            g = scale.validate(grade)
+        except ValueError as e:
+            rep.problem(f"{at} {experiment}: {e}")
+            continue
+        aid, new = repo.assessment_id(conn, cohort, "report", iso, experiment)
+        if new:
+            rep.count("new experiments")
+        for st in students:
+            outcome, old = repo.set_result(conn, aid, st.id, g)
+            rep.count({"new": "grades added", "updated": "grades changed", "same": "unchanged"}[outcome])
+            if outcome != "same":
+                rep.change(f"{iso} {experiment} {st.full_name}: {old or '-'} -> {g}")
+
+
+def set_report_grades(
+    conn: sqlite3.Connection, cohort_name: str, cfg: Config, report_date: str,
+    grades: dict[str, str], matricole: list[str],
+) -> ImportReport:
+    """Store report grades (``{experiment: grade}``) for the given students of the cohort.
+
+    Used for grades entered by hand: usually the members of a group, who all get the
+    same grade for each experiment.
+    """
+    rep = ImportReport(f"Report grades -> {cohort_name}")
+    cohort = repo.cohort_id(conn, cohort_name)
+    iso = parse_date(report_date)
+    by_m = {s.matricola: s for s in repo.cohort_students(conn, cohort)}
+    students = []
+    for m in matricole:
+        if str(m) in by_m:
+            students.append(by_m[str(m)])
+        else:
+            rep.problem(f"matricola {m} not in cohort {cohort_name}")
+    if not students:
+        rep.problem("no student selected")
+        return rep
+    if not grades:
+        rep.problem("no grade entered")
+        return rep
+    _store_report_grades(conn, cohort, cfg.exams.report_scale, iso, grades, students, rep, "")
     return rep
 
 

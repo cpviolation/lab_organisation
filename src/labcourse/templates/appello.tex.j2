@@ -27,7 +27,7 @@
 \hline
 <% for r in rows %>
 <% set e = r.exam %>
-<< offset[outer.index0] + loop.index >> & << (r.full_name if (r.surname or r.name) else '--')|tex >> & << r.matricola|tex >><% if not oral %> & << (r.cohorts|join(', ') or '--')|tex >><% endif %> & << e.student.lab_group if e and e.student.lab_group is not none else '' >> & <% if e %><< '%.0f'|format(e.attendance * 100) >>\%<% endif %> & << (r.appello_mark or '--')|tex >> & << (e.written.split(' ')[0] if e else '--')|tex >> & << ('%g'|format(e.report_points)) if e and e.report_points is not none else '' >> & <% if oral %> & \\<% else %><< (e.oral.split(' ')[0] if e else '--')|tex >> & << 'sì' if r.eligible else 'no' >> & << r.reason|motivo|tex >> \\<% endif %>
+<< offset[outer.index0] + loop.index >> & << (r.full_name if (r.surname or r.name) else '--')|tex >> & << r.matricola|tex >><% if not oral %> & << (r.cohorts|join(', ') or '--')|tex >><% endif %> & << e.student.lab_group if e and e.student.lab_group is not none else '' >> & <% if e %><< '%.0f'|format(e.attendance * 100) >>\%<% endif %> & << (r.appello_mark or '--')|tex >> & << (e.written.split(' ')[0] if e else '--')|tex >> & << e.report_mark|thirtieths if e else '' >> & <% if oral %> & \\<% else %><< (e.oral.split(' ')[0] if e else '--')|tex >> & << 'sì' if r.eligible else 'no' >> & << r.reason|motivo|tex >> \\<% endif %>
 
 \hline
 <% endfor %>

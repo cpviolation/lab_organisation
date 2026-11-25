@@ -428,6 +428,122 @@ def page_exams(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> Non
                          hide_index=True, width="stretch")
 
 
+def page_reports(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
+    st.header("Relazioni")
+    if not cohort:
+        st.info("Nessuna coorte: importa prima gli studenti.")
+        return
+    tab_view, tab_add = st.tabs(["Consulta", "Aggiungi voti"])
+    # the add tab runs first, so that the view tab shows grades saved in this run
+    with tab_add:
+        reports_add_tab(cfg, conn, cohort)
+    with tab_view:
+        reports_view_tab(cfg, conn, cohort)
+
+
+def reports_view_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None:
+    students = repo.cohort_students(conn, repo.cohort_id(conn, cohort), order="group")
+    groups = sorted({s.lab_group for s in students if s.lab_group is not None})
+    c1, c2 = st.columns([1, 3])
+    mode = c1.radio("Mostra", ["Gruppo", "Studente"], horizontal=True, key="reports-mode")
+    if mode == "Gruppo":
+        if not groups:
+            st.info("Nessun gruppo assegnato in questa coorte.")
+            return
+        group = c2.selectbox("Gruppo", groups, key="reports-group")
+        grades = analysis.report_grades(conn, cohort, cfg, group=group)
+        members = [s for s in students if s.lab_group == group]
+        st.caption("Membri: " + ", ".join(s.full_name for s in members))
+        stem = f"{slug(cohort)}_relazioni_gruppo{group}"
+    else:
+        by_label = {f"{s.surname} {s.name} ({s.matricola})"
+                    + (f" — gruppo {s.lab_group}" if s.lab_group is not None else ""): s for s in students}
+        choice = c2.selectbox("Studente", list(by_label), index=None, key="reports-student",
+                              placeholder="Scrivi cognome o matricola")
+        if choice is None:
+            return
+        student = by_label[choice]
+        grades = analysis.report_grades(conn, cohort, cfg, matricola=student.matricola)
+        stem = f"{slug(cohort)}_relazioni_{student.matricola}"
+
+    if not grades:
+        st.info("Nessuna relazione registrata.")
+        return
+    summary = render.report_summary_records(grades)
+    if mode == "Gruppo":
+        m1, m2 = st.columns(2)
+        m1.metric("Relazioni valutate", len({(g.date, g.experiment) for g in grades}))
+        m2.metric("Studenti con voti", len(summary))
+        st.subheader("Voti per relazione")
+        st.dataframe(frame(render.report_group_records(grades)), hide_index=True, width="stretch")
+        st.subheader("Riepilogo per studente")
+        st.dataframe(frame(summary), hide_index=True, width="stretch")
+    else:
+        m1, m2 = st.columns(2)
+        m1.metric("Relazioni", summary[0]["relazioni"])
+        m2.metric("Voto relazioni /30", summary[0]["relazioni /30"] or "-")
+        cols = ["data", "esperienza", "voto", "punti"]
+        st.dataframe(frame([{k: r[k] for k in cols} for r in render.report_records(grades)]),
+                     hide_index=True, width="stretch")
+    if any(g.points is None for g in grades):
+        st.warning("Alcuni voti non sono nella scala configurata (punti \"?\"): controlla `report_scale` "
+                   "e `report_aliases` in course.toml.")
+    scale = cfg.exams.report_scale
+    st.caption(f"Scala: {scale.grades[0]} = {scale.top_points} punti, un punto in meno per ogni gradino. "
+               "Il voto delle relazioni in trentesimi è la media dei punti; sopra 30 è 30L.")
+    download_buttons(render.report_records(grades), stem, f"reports-{stem}")
+
+
+def reports_add_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None:
+    students = repo.cohort_students(conn, repo.cohort_id(conn, cohort), order="group")
+    groups = sorted({s.lab_group for s in students if s.lab_group is not None})
+    if not groups:
+        st.info("Nessun gruppo assegnato in questa coorte: assegna prima i gruppi.")
+        return
+    c1, c2 = st.columns(2)
+    group = c1.selectbox("Gruppo", groups, key="add-group")
+    day = c2.date_input("Data di consegna", value=date.today(), format="DD/MM/YYYY", key="add-date")
+    iso = day.isoformat()
+    names = {s.matricola: f"{s.surname} {s.name}" + (f" (gruppo {s.lab_group})" if s.lab_group != group else "")
+             for s in students}
+    chosen = st.multiselect(
+        "Studenti", list(names), default=[s.matricola for s in students if s.lab_group == group],
+        format_func=names.get, key=f"add-students-{group}",
+        help="Tutto il gruppo, di solito. Togli chi non ha partecipato o aggiungi studenti di altri gruppi.",
+    )
+
+    # experiments of this cohort (or of every cohort, for a new one), with the grades
+    # already stored for this group on this date
+    labels = repo.report_experiments(conn, repo.cohort_id(conn, cohort)) or repo.report_experiments(conn)
+    stored = {g.experiment: g.grade for g in analysis.report_grades(conn, cohort, cfg, group=group)
+              if g.date == iso}
+    labels += [e for e in stored if e not in labels]
+    table = pd.DataFrame({"esperienza": labels, "voto": [stored.get(e) for e in labels]}, dtype=object)
+    edited = st.data_editor(
+        table, num_rows="dynamic", hide_index=True, width="stretch", key=f"add-grades-{group}-{iso}",
+        column_config={
+            "esperienza": st.column_config.TextColumn("Esperienza", required=True),
+            "voto": st.column_config.SelectboxColumn("Voto", options=cfg.exams.report_scale.choices()),
+        },
+    )
+    st.caption("Scegli il voto solo per le esperienze consegnate: le righe senza voto non vengono salvate. "
+               "Per un'esperienza nuova aggiungi una riga in fondo alla tabella.")
+    grades: dict[str, str] = {}
+    for exp, grade in zip(edited["esperienza"], edited["voto"]):
+        if isinstance(exp, str) and exp.strip() and isinstance(grade, str) and grade:
+            grades[exp.strip()] = grade
+
+    def fn(c: sqlite3.Connection):
+        return importers.set_report_grades(c, cohort, cfg, iso, grades, chosen)
+
+    b1, b2, _ = st.columns([1, 1, 4])
+    disabled = not grades or not chosen
+    if b1.button("Anteprima", width="stretch", disabled=disabled, key="add-preview"):
+        run_write(cfg, fn, dry_run=True)
+    if b2.button("Salva", type="primary", width="stretch", disabled=disabled, key="add-save"):
+        run_write(cfg, fn, dry_run=False, strict=True)
+
+
 def page_appelli(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
     st.header("Appelli")
     appelli = repo.list_appelli(conn)
@@ -752,6 +868,7 @@ PAGES = {
     "✅ Presenze": page_attendance,
     "✍️ Foglio firme": page_signature,
     "📝 Esami": page_exams,
+    "📄 Relazioni": page_reports,
     "🗓️ Appelli": page_appelli,
     "📊 Statistiche": page_stats,
     "⚙️ Impostazioni": page_settings,

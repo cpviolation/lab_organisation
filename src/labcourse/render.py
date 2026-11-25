@@ -10,7 +10,8 @@ from typing import Iterable, Sequence
 import jinja2
 from tabulate import tabulate
 
-from .analysis import AppelloRow, AttendanceRow, ExamRow
+from .analysis import AppelloRow, AttendanceRow, ExamRow, ReportGrade
+from .marks import thirtieths
 from .repo import StudentRow
 from .rules import SessionInfo
 
@@ -35,6 +36,7 @@ def _env() -> jinja2.Environment:
     )
     env.filters["tex"] = tex_escape
     env.filters["motivo"] = motivo
+    env.filters["thirtieths"] = thirtieths
     return env
 
 
@@ -137,10 +139,58 @@ def exam_records(rows: list[ExamRow], with_cohort: bool = False) -> list[dict]:
          **({"coorte": r.student.cohort or ""} if with_cohort else {}),
          "gruppo": r.student.lab_group if r.student.lab_group is not None else "",
          "presenza %": round(r.attendance * 100), "scritto": r.written, "relazioni": r.reports,
-         "punti relazioni": f"{r.report_points:g}" if r.report_points is not None else "",
+         "relazioni /30": thirtieths(r.report_mark),
          "orale": r.oral, "ammesso": "sì" if r.eligible else "no", "motivo": r.reasons}
         for r in rows
     ]
+
+
+def _points(p: float | None) -> str:
+    return f"{p:g}" if p is not None else "?"
+
+
+def report_records(grades: list[ReportGrade]) -> list[dict]:
+    """One row per report grade."""
+    return [
+        {"cognome": g.student.surname, "nome": g.student.name, "matricola": g.student.matricola,
+         "gruppo": g.student.lab_group if g.student.lab_group is not None else "",
+         "data": g.date, "esperienza": g.experiment, "voto": g.grade, "punti": _points(g.points)}
+        for g in grades
+    ]
+
+
+def report_group_records(grades: list[ReportGrade]) -> list[dict]:
+    """One row per report (date + experiment), one column per student with their grade.
+
+    Members of a group usually share every grade; a different or missing grade shows
+    students who changed group or joined later.
+    """
+    students = list(dict.fromkeys(g.student for g in grades))
+    label = {s: f"{s.surname} {s.name}" for s in students}
+    by_report: dict[tuple[str, str], dict] = {}
+    for g in grades:
+        by_report.setdefault((g.date, g.experiment), {})[g.student] = g
+    out = []
+    for (d, exp), marks in sorted(by_report.items()):
+        rec = {"data": d, "esperienza": exp}
+        for s in students:
+            rec[label[s]] = marks[s].grade if s in marks else "-"
+        out.append(rec)
+    return out
+
+
+def report_summary_records(grades: list[ReportGrade]) -> list[dict]:
+    """One row per student: number of reports and report mark out of 30 (as counted for the exam)."""
+    by_student: dict = {}
+    for g in grades:
+        by_student.setdefault(g.student, []).append(g)
+    out = []
+    for s, gs in by_student.items():
+        valid = [g.points for g in gs if g.points is not None]
+        out.append({"cognome": s.surname, "nome": s.name, "matricola": s.matricola,
+                    "relazioni": len(gs),
+                    "relazioni /30": thirtieths(sum(valid) / len(valid)) if len(valid) == len(gs) else "?"})
+    return out
 
 
 def appello_records(rows: list[AppelloRow], with_cohort: bool = True) -> list[dict]:
@@ -156,7 +206,7 @@ def appello_records(rows: list[AppelloRow], with_cohort: bool = True) -> list[di
             "presenza %": round(e.attendance * 100) if e else "",
             "scritto appello": r.appello_mark or "-",
             "scritto valido": e.written if e else "-",
-            "punti relazioni": f"{e.report_points:g}" if e and e.report_points is not None else "",
+            "relazioni /30": thirtieths(e.report_mark) if e else "",
             "orale": e.oral if e else "-",
             "ammesso": "sì" if r.eligible else "no",
             "motivo": motivo(r.reason),
