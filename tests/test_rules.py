@@ -42,7 +42,19 @@ def test_report_scale():
     assert scale.points("E") == 16
     with pytest.raises(ValueError):
         scale.points("F")
-    assert report_score(["A+", "B+"], ExamRules()) == 58
+    assert report_score(["A+", "B+"], ExamRules()) == 29  # mean, out of 30
+    assert report_score(["A+", "A+"], ExamRules()) == 31
+    with pytest.raises(ValueError):
+        report_score([], ExamRules())
+
+
+def test_thirtieths():
+    from labcourse.marks import thirtieths
+    assert thirtieths(None) == ""
+    assert thirtieths(28) == "28"
+    assert thirtieths(27.75) == "27.8"
+    assert thirtieths(30) == "30"
+    assert thirtieths(30.5) == "30L"
 
 
 # ---------------------------------------------------------------- names

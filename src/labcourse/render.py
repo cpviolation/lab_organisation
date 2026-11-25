@@ -11,6 +11,7 @@ import jinja2
 from tabulate import tabulate
 
 from .analysis import AppelloRow, AttendanceRow, ExamRow, ReportGrade
+from .marks import thirtieths
 from .repo import StudentRow
 from .rules import SessionInfo
 
@@ -35,6 +36,7 @@ def _env() -> jinja2.Environment:
     )
     env.filters["tex"] = tex_escape
     env.filters["motivo"] = motivo
+    env.filters["thirtieths"] = thirtieths
     return env
 
 
@@ -137,7 +139,7 @@ def exam_records(rows: list[ExamRow], with_cohort: bool = False) -> list[dict]:
          **({"coorte": r.student.cohort or ""} if with_cohort else {}),
          "gruppo": r.student.lab_group if r.student.lab_group is not None else "",
          "presenza %": round(r.attendance * 100), "scritto": r.written, "relazioni": r.reports,
-         "punti relazioni": f"{r.report_points:g}" if r.report_points is not None else "",
+         "relazioni /30": thirtieths(r.report_mark),
          "orale": r.oral, "ammesso": "sì" if r.eligible else "no", "motivo": r.reasons}
         for r in rows
     ]
@@ -178,7 +180,7 @@ def report_group_records(grades: list[ReportGrade]) -> list[dict]:
 
 
 def report_summary_records(grades: list[ReportGrade]) -> list[dict]:
-    """One row per student: number of reports and total points (as counted for the exam)."""
+    """One row per student: number of reports and report mark out of 30 (as counted for the exam)."""
     by_student: dict = {}
     for g in grades:
         by_student.setdefault(g.student, []).append(g)
@@ -186,8 +188,8 @@ def report_summary_records(grades: list[ReportGrade]) -> list[dict]:
     for s, gs in by_student.items():
         valid = [g.points for g in gs if g.points is not None]
         out.append({"cognome": s.surname, "nome": s.name, "matricola": s.matricola,
-                    "relazioni": len(gs), "punti totali": f"{sum(valid):g}" if len(valid) == len(gs) else "?",
-                    "media punti": f"{sum(valid) / len(valid):.1f}" if valid else ""})
+                    "relazioni": len(gs),
+                    "relazioni /30": thirtieths(sum(valid) / len(valid)) if len(valid) == len(gs) else "?"})
     return out
 
 
@@ -204,7 +206,7 @@ def appello_records(rows: list[AppelloRow], with_cohort: bool = True) -> list[di
             "presenza %": round(e.attendance * 100) if e else "",
             "scritto appello": r.appello_mark or "-",
             "scritto valido": e.written if e else "-",
-            "punti relazioni": f"{e.report_points:g}" if e and e.report_points is not None else "",
+            "relazioni /30": thirtieths(e.report_mark) if e else "",
             "orale": e.oral if e else "-",
             "ammesso": "sì" if r.eligible else "no",
             "motivo": motivo(r.reason),

@@ -479,10 +479,9 @@ def reports_view_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None
         st.subheader("Riepilogo per studente")
         st.dataframe(frame(summary), hide_index=True, width="stretch")
     else:
-        m1, m2, m3 = st.columns(3)
+        m1, m2 = st.columns(2)
         m1.metric("Relazioni", summary[0]["relazioni"])
-        m2.metric("Punti totali", summary[0]["punti totali"])
-        m3.metric("Media punti", summary[0]["media punti"])
+        m2.metric("Voto relazioni /30", summary[0]["relazioni /30"] or "-")
         cols = ["data", "esperienza", "voto", "punti"]
         st.dataframe(frame([{k: r[k] for k in cols} for r in render.report_records(grades)]),
                      hide_index=True, width="stretch")
@@ -490,8 +489,8 @@ def reports_view_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None
         st.warning("Alcuni voti non sono nella scala configurata (punti \"?\"): controlla `report_scale` "
                    "e `report_aliases` in course.toml.")
     scale = cfg.exams.report_scale
-    st.caption(f"Scala: {scale.grades[0]} = {scale.top_points} punti, un punto in meno per ogni gradino; "
-               "i punti relazioni dell'esame sono la somma.")
+    st.caption(f"Scala: {scale.grades[0]} = {scale.top_points} punti, un punto in meno per ogni gradino. "
+               "Il voto delle relazioni in trentesimi è la media dei punti; sopra 30 è 30L.")
     download_buttons(render.report_records(grades), stem, f"reports-{stem}")
 
 

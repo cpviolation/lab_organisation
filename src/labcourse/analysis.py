@@ -43,7 +43,7 @@ class ExamRow:
     attendance: float
     written: str          # counting written mark, e.g. "27 (2026-01-20)"
     reports: str          # "Pendolo:B+ Ottica:A"
-    report_points: float | None
+    report_mark: float | None  # mean report points, out of 30 (above 30 = cum laude)
     oral: str
     eligible: bool
     reasons: str

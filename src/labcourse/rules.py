@@ -83,5 +83,12 @@ def oral_eligibility(
 
 
 def report_score(grades: Iterable[str], exam_rules: ExamRules) -> float:
-    """Sum of report points (one letter grade per experiment)."""
-    return sum(exam_rules.report_scale.points(g) for g in grades)
+    """Report mark out of 30: mean points over the experiments (one letter grade each).
+
+    The top grade is worth ``report_top_points`` (31 by default), so a mean above 30
+    corresponds to cum laude.
+    """
+    points = [exam_rules.report_scale.points(g) for g in grades]
+    if not points:
+        raise ValueError("no report grades")
+    return sum(points) / len(points)

@@ -61,11 +61,11 @@ def test_migrate_legacy(tmp_path, cfg):
     _, rows = analysis.attendance_table(conn, "2025/26", cfg)
     assert {r.student.matricola: r.fraction for r in rows} == {"100001": 1.0, "100003": 0.0, "100004": 0.5}
     ex = {r.student.matricola: r for r in analysis.exam_table(conn, "2025/26", cfg)}
-    assert ex["100001"].written == "27 (2026-01-20)" and ex["100001"].report_points == 57
+    assert ex["100001"].written == "27 (2026-01-20)" and ex["100001"].report_mark == 28.5
     assert ex["100001"].oral == "28 (2026-02-01)"
     assert ex["100004"].written.startswith("30L")  # old code stored 30L as 31
     assert ex["100004"].reports == "Molla:B Tubo Acustico:A/A-"
-    assert ex["100004"].report_points == 26 + 29.5
+    assert ex["100004"].report_mark == (26 + 29.5) / 2
 
     # re-running changes nothing
     again = go()
@@ -312,7 +312,7 @@ def test_report_grades(course, tmp_path):
     pivot = render.report_group_records(group1)
     assert [r["esperienza"] for r in pivot] == ["Ottica", "Pendolo"]
     summary = {r["cognome"]: r for r in render.report_summary_records(group1)}
-    assert summary["Clapton"]["relazioni"] == 2 and summary["Clapton"]["punti totali"] == "57"
+    assert summary["Clapton"]["relazioni"] == 2 and summary["Clapton"]["relazioni /30"] == "28.5"
 
     baker = next(g.student for g in analysis.report_grades(conn, cohort, cfg, group=2) if g.student.surname == "Baker")
     one = analysis.report_grades(conn, cohort, cfg, matricola=baker.matricola)

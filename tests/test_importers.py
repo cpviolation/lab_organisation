@@ -161,8 +161,8 @@ def test_reports_copied_to_group_members(conn, fx, cfg):
     # moving a student to another group later does not change grades earned
     repo.set_group(conn, repo.student_by_matricola(conn, "100001").id, repo.cohort_id(conn, "2025/26"), 2)
     rows = {r.student.matricola: r for r in analysis.exam_table(conn, "2025/26", cfg)}
-    assert rows["100001"].report_points == 27 + 30
-    assert rows["100002"].report_points == 22
+    assert rows["100001"].report_mark == (27 + 30) / 2
+    assert rows["100002"].report_mark == 22
 
 
 def test_invalid_marks_are_reported(conn, fx, cfg, tmp_path):

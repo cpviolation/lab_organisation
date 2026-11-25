@@ -73,6 +73,13 @@ class Mark:
         return self.raw
 
 
+def thirtieths(value: float | None) -> str:
+    """A mark out of 30 for display: one decimal at most, ``30L`` above 30, ``""`` if missing."""
+    if value is None:
+        return ""
+    return "30L" if value > 30 else f"{round(value, 1):g}"
+
+
 @dataclass(frozen=True)
 class ReportScale:
     """Ordered letter grades for lab reports; the first grade is worth ``top_points``."""
