@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,13 +54,15 @@ class Config:
 
 
 def load_config(path: str | Path) -> Config:
-    path = Path(path)
+    path = Path(path).expanduser()
     with path.open("rb") as f:
         raw = tomllib.load(f)
     root = path.resolve().parent
 
     def p(key: str, default: str) -> Path:
-        value = Path(raw.get(key, default))
+        # "~" and environment variables are expanded, so that one course.toml can point
+        # to e.g. a Google Drive folder on computers with different home directories
+        value = Path(os.path.expandvars(raw.get(key, default))).expanduser()
         return value if value.is_absolute() else root / value
 
     att = raw.get("attendance", {})

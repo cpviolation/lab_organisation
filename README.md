@@ -113,6 +113,24 @@ attendance, and how long students wait before the written and the oral exam; the
 available in Python from `labcourse.stats`. It reads `course.toml` from the current folder (or `-c`/`LAB_CONFIG`). Stop it with
 Ctrl+C. It needs `streamlit`, installed by `setup.sh` or `pip install -e '.[gui]'`.
 
+## Sharing the database between computers
+
+The database is a single SQLite file, so it can live in a folder synced by Google Drive (use the
+institutional Drive: it holds students' personal data). The sync cannot merge changes made on two
+computers, so **use one computer at a time**: close the GUI and let Drive finish syncing before
+opening it on the other computer.
+
+- In Google Drive for desktop, use *Mirror files* or make the folder *Available offline*.
+- Point `course.toml` to the file; `~` and environment variables are expanded, so the same
+  `course.toml` works on computers with different home folders:
+  ```toml
+  database = "~/Library/CloudStorage/GoogleDrive-<account>/My Drive/lab/lab.db"
+  ```
+- The GUI writes `lab.db.lock` next to the database. If another computer used the database in the
+  last 12 hours, the GUI shows a warning and waits for confirmation before continuing (the `lab`
+  command prints a warning). The lock is removed when the GUI stops. It is only as up to date as the
+  sync: it protects against forgetting, not against using both computers at the same moment.
+
 ## Migrating from the old scripts
 
 The previous `lborg` scripts have been removed (they are in the git history before this
