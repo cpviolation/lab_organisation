@@ -347,6 +347,27 @@ def test_set_report_grades(course, tmp_path):
     conn.close()
 
 
+def test_set_oral_marks(course, tmp_path):
+    from labcourse import analysis, db, importers, repo
+    from labcourse.config import load_config
+    ok(course, "cohort", "import", "students_2025.json")
+    cfg = load_config(tmp_path / "course.toml")
+    conn = db.connect(cfg.database)
+    cohort = repo.list_cohorts(conn)[0]
+
+    rep = importers.set_oral_marks(conn, "2026-03-10", {"100001": "27", "100004": "30 e lode"})
+    assert not rep.problems and rep.counts == {"new oral dates": 1, "marks added": 2}
+    rep = importers.set_oral_marks(conn, "10/03/2026", {"100001": "28", "100004": "30L"})
+    assert rep.counts == {"marks changed": 1, "unchanged": 1}
+    orals = {r.student.matricola: r.oral for r in analysis.exam_table(conn, cohort, cfg)}
+    assert orals["100001"] == "28 (2026-03-10)" and orals["100004"] == "30L (2026-03-10)"
+
+    rep = importers.set_oral_marks(conn, "2026-03-10", {"999": "27", "100002": "35", "100003": ""})
+    assert len(rep.problems) == 3 and "marks added" not in rep.counts
+    assert importers.set_oral_marks(conn, "2026-03-10", {}).problems == ["no mark entered"]
+    conn.close()
+
+
 def test_report_scale_choices():
     from labcourse.marks import ReportScale
     scale = ReportScale(("A", "A-", "A-/B+", "B+", "B"), top_points=30)
