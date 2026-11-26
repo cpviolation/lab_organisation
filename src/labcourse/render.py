@@ -179,8 +179,17 @@ def report_group_records(grades: list[ReportGrade]) -> list[dict]:
     return out
 
 
-def report_summary_records(grades: list[ReportGrade]) -> list[dict]:
-    """One row per student: number of reports and report mark out of 30 (as counted for the exam)."""
+def report_detail(grades: list[ReportGrade]) -> str:
+    """Each report with its grade, by date: "Pendolo B+ · Ottica A"."""
+    return " · ".join(f"{g.experiment} {g.grade}" for g in sorted(grades, key=lambda g: (g.date, g.experiment)))
+
+
+def report_summary_records(grades: list[ReportGrade], detail: bool = False) -> list[dict]:
+    """One row per student: number of reports and report mark out of 30 (as counted for the exam).
+
+    With ``detail``, the ``relazioni`` column also lists each report with its grade,
+    e.g. "2: Pendolo B+ · Ottica A".
+    """
     by_student: dict = {}
     for g in grades:
         by_student.setdefault(g.student, []).append(g)
@@ -188,7 +197,7 @@ def report_summary_records(grades: list[ReportGrade]) -> list[dict]:
     for s, gs in by_student.items():
         valid = [g.points for g in gs if g.points is not None]
         out.append({"cognome": s.surname, "nome": s.name, "matricola": s.matricola,
-                    "relazioni": len(gs),
+                    "relazioni": f"{len(gs)}: {report_detail(gs)}" if detail else len(gs),
                     "relazioni /30": thirtieths(sum(valid) / len(valid)) if len(valid) == len(gs) else "?"})
     return out
 

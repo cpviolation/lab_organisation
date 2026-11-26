@@ -506,7 +506,7 @@ def reports_view_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None
         st.subheader("Voti per relazione")
         st.dataframe(frame(render.report_group_records(grades)), hide_index=True, width="stretch")
         st.subheader("Riepilogo per studente")
-        st.dataframe(frame(summary), hide_index=True, width="stretch")
+        st.dataframe(frame(render.report_summary_records(grades, detail=True)), hide_index=True, width="stretch")
     else:
         m1, m2 = st.columns(2)
         m1.metric("Relazioni", summary[0]["relazioni"])
@@ -521,6 +521,30 @@ def reports_view_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None
     st.caption(f"Scala: {scale.grades[0]} = {scale.top_points} punti, un punto in meno per ogni gradino. "
                "Il voto delle relazioni in trentesimi è la media dei punti; sopra 30 è 30L.")
     download_buttons(render.report_records(grades), stem, f"reports-{stem}")
+
+
+def appello_report_detail(cfg: Config, conn: sqlite3.Connection, rows: list[analysis.AppelloRow],
+                          cells: list[tuple[int, str]]) -> None:
+    """Report grades of the student whose "relazioni /30" cell is selected in the appello table."""
+    picked = [i for i, col in cells if col == "relazioni /30"]
+    if not picked or picked[0] >= len(rows):
+        return
+    row = rows[picked[0]]
+    if row.exam is None:
+        st.info(f"{row.matricola}: studente non presente nel database, nessuna relazione.")
+        return
+    student = row.exam.student
+    # the exam row is evaluated in the student's most recent cohort
+    cohort = row.cohorts[-1] if row.cohorts else student.cohort
+    grades = analysis.report_grades(conn, cohort, cfg, matricola=student.matricola) if cohort else []
+    st.subheader(f"Relazioni di {student.surname} {student.name}")
+    if not grades:
+        st.info("Nessuna relazione registrata.")
+        return
+    cols = ["data", "esperienza", "voto", "punti"]
+    st.dataframe(frame([{k: r[k] for k in cols} for r in render.report_records(grades)]),
+                 hide_index=True, width="stretch")
+    st.caption(f"Voto relazioni: {render.thirtieths(row.exam.report_mark) or '-'} /30 (media dei punti).")
 
 
 def reports_add_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None:
@@ -653,11 +677,14 @@ def page_appelli(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> N
         if df.empty:
             st.info("Nessuno studente da mostrare.")
         else:
-            st.dataframe(
+            event = st.dataframe(
                 df.style.map(lambda v: "color: #1e8449; font-weight: 600" if v == "sì"
                              else ("color: #c0392b" if v == "no" else ""), subset=["ammesso"]),
-                hide_index=True, width="stretch",
+                hide_index=True, width="stretch", on_select="rerun", selection_mode="single-cell",
+                key=f"appello-table-{iso}-{only_admitted}-{by_group}",
             )
+            st.caption("Clicca sul voto in «relazioni /30» per vedere il dettaglio delle relazioni.")
+            appello_report_detail(cfg, conn, shown, event.selection.cells)
         download_buttons(records, f"{iso}_appello", f"appello-{iso}")
         p1, p2 = st.columns(2)
         with p1:

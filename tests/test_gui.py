@@ -71,6 +71,26 @@ def test_appelli_page_renders(course, monkeypatch, tmp_path):
     assert set(at.dataframe[0].value["matricola"]) >= {"100001", "555"}
 
 
+def test_appello_report_detail_on_click(course, monkeypatch, tmp_path):
+    from test_legacy_and_cli import _esse3_xlsx
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "groups", "assign", "groups.json")
+    ok(course, "exams", "import", "reports.json", "--kind", "report")
+    ok(course, "appelli", "import", str(_esse3_xlsx(tmp_path / "iscritti.xlsx")))
+    monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
+    at = AppTest.from_file(GUI, default_timeout=30).run()
+    at.sidebar.radio[0].set_value("🗓️ Appelli").run()
+    table = at.dataframe[0].value
+    row = list(table["cognome"]).index("Clapton")
+    key = f"appello-table-{at.session_state['appello-date']}-False-False"
+    at.session_state[key] = {"selection": {"rows": [], "columns": [], "cells": [[row, "relazioni /30"]]}}
+    at.run()
+    assert not at.exception
+    assert at.subheader[-1].value == "Relazioni di Clapton Eric"
+    detail = at.dataframe[1].value
+    assert list(detail["esperienza"]) == ["Ottica", "Pendolo"] and list(detail["voto"]) == ["A", "B+"]
+
+
 def test_reports_page(course, monkeypatch, tmp_path):
     ok(course, "cohort", "import", "students_2025.json")
     ok(course, "groups", "assign", "groups.json")
@@ -85,6 +105,9 @@ def test_reports_page(course, monkeypatch, tmp_path):
     assert list(grid["esperienza"]) == ["Ottica", "Pendolo"]
     assert set(grid.columns) == {"data", "esperienza", "Clapton Eric", "Bruce Jack"}
     assert list(grid["Clapton Eric"]) == ["A", "B+"]
+
+    summary = at.dataframe[1].value.set_index("cognome")
+    assert summary.loc["Clapton", "relazioni"] == "2: Ottica A · Pendolo B+"
 
     at.radio(key="reports-mode").set_value("Studente").run()
     label = next(o for o in at.selectbox(key="reports-student").options if "Baker" in o)
