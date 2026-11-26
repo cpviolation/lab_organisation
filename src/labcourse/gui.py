@@ -506,7 +506,7 @@ def reports_view_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None
         st.subheader("Voti per relazione")
         st.dataframe(frame(render.report_group_records(grades)), hide_index=True, width="stretch")
         st.subheader("Riepilogo per studente")
-        st.dataframe(frame(summary), hide_index=True, width="stretch")
+        st.dataframe(frame(render.report_summary_records(grades, detail=True)), hide_index=True, width="stretch")
     else:
         m1, m2 = st.columns(2)
         m1.metric("Relazioni", summary[0]["relazioni"])
@@ -521,6 +521,30 @@ def reports_view_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None
     st.caption(f"Scala: {scale.grades[0]} = {scale.top_points} punti, un punto in meno per ogni gradino. "
                "Il voto delle relazioni in trentesimi è la media dei punti; sopra 30 è 30L.")
     download_buttons(render.report_records(grades), stem, f"reports-{stem}")
+
+
+def appello_report_detail(cfg: Config, conn: sqlite3.Connection, rows: list[analysis.AppelloRow],
+                          cells: list[tuple[int, str]]) -> None:
+    """Report grades of the student whose "relazioni /30" cell is selected in the appello table."""
+    picked = [i for i, col in cells if col == "relazioni /30"]
+    if not picked or picked[0] >= len(rows):
+        return
+    row = rows[picked[0]]
+    if row.exam is None:
+        st.info(f"{row.matricola}: studente non presente nel database, nessuna relazione.")
+        return
+    student = row.exam.student
+    # the exam row is evaluated in the student's most recent cohort
+    cohort = row.cohorts[-1] if row.cohorts else student.cohort
+    grades = analysis.report_grades(conn, cohort, cfg, matricola=student.matricola) if cohort else []
+    st.subheader(f"Relazioni di {student.surname} {student.name}")
+    if not grades:
+        st.info("Nessuna relazione registrata.")
+        return
+    cols = ["data", "esperienza", "voto", "punti"]
+    st.dataframe(frame([{k: r[k] for k in cols} for r in render.report_records(grades)]),
+                 hide_index=True, width="stretch")
+    st.caption(f"Voto relazioni: {render.thirtieths(row.exam.report_mark) or '-'} /30 (media dei punti).")
 
 
 def reports_add_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None:
@@ -573,15 +597,77 @@ def reports_add_tab(cfg: Config, conn: sqlite3.Connection, cohort: str) -> None:
         run_write(cfg, fn, dry_run=False, strict=True)
 
 
+ORAL_MARKS = ["30L"] + [str(n) for n in range(30, 17, -1)] + ["I", "R", "A"]
+
+
+def oral_marks_tab(cfg: Config, conn: sqlite3.Connection, appelli: list, labels: dict[str, str]) -> None:
+    """Enter the oral marks of the students of a written appello."""
+    if not appelli:
+        st.info("Nessun appello: importa la lista degli iscritti o i risultati dello scritto.")
+        return
+    c1, c2 = st.columns(2)
+    dates = [r["date"] for r in reversed(appelli)]
+    appello = c1.selectbox("Appello dello scritto", dates, format_func=labels.get, key="oral-appello")
+    day = c2.date_input("Data dell'orale", value=date.today(), format="DD/MM/YYYY", key="oral-date")
+    iso = day.isoformat()
+    show_all = st.toggle("Mostra anche i non ammessi", key="oral-all")
+
+    rows = [r for r in analysis.appello_table(conn, cfg, appello) if r.exam is not None]
+    if not show_all:
+        rows = [r for r in rows if r.eligible]
+    if not rows:
+        st.info("Nessuno studente ammesso all'orale in questo appello.")
+        return
+
+    # marks already stored on this oral date, in each student's most recent cohort
+    stored: dict[int, str] = {}
+    for name in {r.cohorts[-1] for r in rows if r.cohorts}:
+        for results in repo.cohort_results(conn, repo.cohort_id(conn, name), kind="oral").values():
+            for res in results:
+                if res.date == iso:
+                    stored[res.student_id] = res.raw_mark
+    table = pd.DataFrame({
+        "cognome": [r.exam.student.surname for r in rows],
+        "nome": [r.exam.student.name for r in rows],
+        "matricola": [r.matricola for r in rows],
+        "scritto": [r.exam.written for r in rows],
+        "relazioni /30": [render.thirtieths(r.exam.report_mark) or "-" for r in rows],
+        "ultimo orale": [r.exam.oral for r in rows],
+        "voto": [stored.get(r.exam.student.id) for r in rows],
+    }, dtype=object)
+    edited = st.data_editor(
+        table, hide_index=True, width="stretch", key=f"oral-marks-{appello}-{iso}-{show_all}",
+        disabled=[c for c in table.columns if c != "voto"],
+        column_config={"voto": st.column_config.SelectboxColumn("Voto dell'orale", options=ORAL_MARKS)},
+    )
+    st.caption("I = insufficiente, R = ritirato, A = assente. Le righe senza voto non vengono salvate; "
+               "un voto già salvato per questa data si può cambiare ma non cancellare da qui.")
+    marks = {m: v for m, v in zip(edited["matricola"], edited["voto"]) if isinstance(v, str) and v}
+
+    def fn(c: sqlite3.Connection):
+        return importers.set_oral_marks(c, iso, marks)
+
+    b1, b2, _ = st.columns([1, 1, 4])
+    if b1.button("Anteprima", width="stretch", disabled=not marks, key="oral-preview"):
+        run_write(cfg, fn, dry_run=True)
+    if b2.button("Salva", type="primary", width="stretch", disabled=not marks, key="oral-save"):
+        run_write(cfg, fn, dry_run=False, strict=True)
+
+
 def page_appelli(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> None:
     st.header("Appelli")
     appelli = repo.list_appelli(conn)
     labels = {r["date"]: f"{r['date'][8:]}/{r['date'][5:7]}/{r['date'][:4]} — {r['iscritti']} iscritti, "
                          f"{r['con_voto']} con voto" for r in appelli}
-    tab_sum, tab_imp, tab_edit = st.tabs(["Iscritti e riepilogo", "Importa iscritti e voti", "Aggiungi o rimuovi"])
+    tab_sum, tab_oral, tab_imp, tab_edit = st.tabs(
+        ["Iscritti e riepilogo", "Voti dell'orale", "Importa iscritti e voti", "Aggiungi o rimuovi"])
 
     with tab_imp:
         appello_import_tab(cfg)
+
+    # the oral tab runs before the summary, so that the summary shows marks saved in this run
+    with tab_oral:
+        oral_marks_tab(cfg, conn, appelli, labels)
 
     with tab_edit:
         c1, c2 = st.columns([1, 2])
@@ -653,11 +739,14 @@ def page_appelli(cfg: Config, conn: sqlite3.Connection, cohort: str | None) -> N
         if df.empty:
             st.info("Nessuno studente da mostrare.")
         else:
-            st.dataframe(
+            event = st.dataframe(
                 df.style.map(lambda v: "color: #1e8449; font-weight: 600" if v == "sì"
                              else ("color: #c0392b" if v == "no" else ""), subset=["ammesso"]),
-                hide_index=True, width="stretch",
+                hide_index=True, width="stretch", on_select="rerun", selection_mode="single-cell",
+                key=f"appello-table-{iso}-{only_admitted}-{by_group}",
             )
+            st.caption("Clicca sul voto in «relazioni /30» per vedere il dettaglio delle relazioni.")
+            appello_report_detail(cfg, conn, shown, event.selection.cells)
         download_buttons(records, f"{iso}_appello", f"appello-{iso}")
         p1, p2 = st.columns(2)
         with p1:

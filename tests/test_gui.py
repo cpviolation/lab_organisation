@@ -1,6 +1,7 @@
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 pytest.importorskip("streamlit")
@@ -71,6 +72,53 @@ def test_appelli_page_renders(course, monkeypatch, tmp_path):
     assert set(at.dataframe[0].value["matricola"]) >= {"100001", "555"}
 
 
+def test_appello_report_detail_on_click(course, monkeypatch, tmp_path):
+    from test_legacy_and_cli import _esse3_xlsx
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "groups", "assign", "groups.json")
+    ok(course, "exams", "import", "reports.json", "--kind", "report")
+    ok(course, "appelli", "import", str(_esse3_xlsx(tmp_path / "iscritti.xlsx")))
+    monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
+    at = AppTest.from_file(GUI, default_timeout=30).run()
+    at.sidebar.radio[0].set_value("🗓️ Appelli").run()
+    table = at.dataframe[0].value
+    row = list(table["cognome"]).index("Clapton")
+    key = f"appello-table-{at.session_state['appello-date']}-False-False"
+    at.session_state[key] = {"selection": {"rows": [], "columns": [], "cells": [[row, "relazioni /30"]]}}
+    at.run()
+    assert not at.exception
+    assert at.subheader[-1].value == "Relazioni di Clapton Eric"
+    detail = at.dataframe[1].value
+    assert list(detail["esperienza"]) == ["Ottica", "Pendolo"] and list(detail["voto"]) == ["A", "B+"]
+
+
+def test_appello_oral_marks_tab(course, monkeypatch, tmp_path):
+    from test_legacy_and_cli import _esse3_xlsx
+    from labcourse import db, importers
+    from labcourse.config import load_config
+    ok(course, "cohort", "import", "students_2025.json")
+    ok(course, "appelli", "import", str(_esse3_xlsx(tmp_path / "iscritti.xlsx")))
+    conn = db.connect(load_config(tmp_path / "course.toml").database)
+    with db.transaction(conn):
+        importers.set_oral_marks(conn, "2026-03-10", {"100001": "27"})
+    conn.close()
+    monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
+
+    at = AppTest.from_file(GUI, default_timeout=30).run()
+    at.sidebar.radio[0].set_value("🗓️ Appelli").run()
+    assert not at.exception
+    at.date_input(key="oral-date").set_value(date(2026, 3, 10))
+    at.toggle(key="oral-all").set_value(True).run()   # no attendance data: nobody is admitted
+    assert not at.exception
+    editor = next(d.value for d in at.dataframe if "ultimo orale" in d.value.columns)
+    marks = dict(zip(editor["matricola"], editor["voto"]))
+    assert marks["100001"] == "27" and pd.isna(marks["100003"])
+    assert "555" not in marks                          # not in the database: no oral mark
+    at.button(key="oral-save").click().run()          # the stored mark is saved again, unchanged
+    assert not at.exception and at.success
+    assert any("1 unchanged" in m.value for m in at.markdown)
+
+
 def test_reports_page(course, monkeypatch, tmp_path):
     ok(course, "cohort", "import", "students_2025.json")
     ok(course, "groups", "assign", "groups.json")
@@ -85,6 +133,9 @@ def test_reports_page(course, monkeypatch, tmp_path):
     assert list(grid["esperienza"]) == ["Ottica", "Pendolo"]
     assert set(grid.columns) == {"data", "esperienza", "Clapton Eric", "Bruce Jack"}
     assert list(grid["Clapton Eric"]) == ["A", "B+"]
+
+    summary = at.dataframe[1].value.set_index("cognome")
+    assert summary.loc["Clapton", "relazioni"] == "2: Ottica A · Pendolo B+"
 
     at.radio(key="reports-mode").set_value("Studente").run()
     label = next(o for o in at.selectbox(key="reports-student").options if "Baker" in o)

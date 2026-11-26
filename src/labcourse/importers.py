@@ -537,6 +537,43 @@ def set_report_grades(
     return rep
 
 
+def set_oral_marks(conn: sqlite3.Connection, oral_date: str, marks: dict[str, str]) -> ImportReport:
+    """Store oral marks entered by hand: ``{matricola: mark}``.
+
+    Each mark is stored in the student's most recent cohort, the one their exam is
+    evaluated in. Marks use the same words as Esse3 exports ("30 e lode", "ritirato"…).
+    """
+    iso = parse_date(oral_date)
+    rep = ImportReport(f"Oral marks {iso}")
+    if not marks:
+        rep.problem("no mark entered")
+        return rep
+    for matricola, value in marks.items():
+        st = repo.student_by_matricola(conn, str(matricola))
+        cohort_name = repo.latest_cohort(conn, str(matricola))
+        if st is None or cohort_name is None:
+            rep.problem(f"matricola {matricola} not in the database")
+            continue
+        try:
+            mark = parse_exam_mark(value)
+        except ValueError as e:
+            rep.problem(f"{st.full_name}: {e}")
+            continue
+        if mark is None:
+            rep.problem(f"{st.full_name}: {value!r} is not a mark")
+            continue
+        aid, new = repo.assessment_id(conn, repo.cohort_id(conn, cohort_name), "oral", iso)
+        if new:
+            rep.count("new oral dates")
+        outcome, old = repo.set_result(conn, aid, st.id, mark)
+        rep.count({"new": "marks added", "updated": "marks changed", "same": "unchanged"}[outcome])
+        if outcome == "updated":
+            rep.change(f"{iso} {st.full_name}: {old} -> {mark}")
+        elif outcome == "new":
+            rep.change(f"{iso} {st.full_name}: {mark}")
+    return rep
+
+
 # ---------------------------------------------------------------- appelli (registrations and marks)
 
 _MARK_WORDS = {
