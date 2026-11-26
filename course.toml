@@ -2,7 +2,7 @@
 # Relative paths are resolved against the folder containing this file.
 
 title = "Laboratorio I – Turno Beta"
-database = "data/lab.db"
+database = "~/Google Drive/My Drive/LaboratorioI/data/lab.db"
 output_dir = "output"
 backup_dir = "data/backups"
 # Cohort used when --cohort is not given

@@ -113,3 +113,22 @@ def test_reports_add_tab(course, monkeypatch, tmp_path):
     at.button(key="add-save").click().run()
     assert not at.exception and not at.error
     assert at.success and "Modifiche salvate" in at.success[0].value
+
+
+def test_database_in_use_elsewhere(course, monkeypatch, tmp_path):
+    from labcourse import lock
+    from labcourse.config import load_config
+    ok(course, "cohort", "import", "students_2025.json")
+    monkeypatch.setenv("LAB_CONFIG", str(tmp_path / "course.toml"))
+    database = load_config(tmp_path / "course.toml").database
+    lock.acquire(database, lock.Machine("f" * 32, "altro-mac"))
+
+    at = AppTest.from_file(GUI, default_timeout=30).run()
+    assert not at.exception
+    assert at.warning and "altro-mac" in at.warning[0].value
+    assert not at.sidebar.radio            # nothing else is shown
+
+    at.button(key="lock-takeover").click().run()
+    assert not at.exception and not at.warning
+    assert at.sidebar.radio                 # the app is back
+    assert lock.read(database).machine_id == lock.this_machine().id

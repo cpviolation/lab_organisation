@@ -8,6 +8,12 @@ from labcourse.config import Config
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def _machine_id(tmp_path_factory, monkeypatch):
+    """Keep this computer's id (see labcourse.lock) out of the real home directory."""
+    monkeypatch.setenv("LABCOURSE_HOME", str(tmp_path_factory.mktemp("labcourse-home")))
+
+
 @pytest.fixture
 def fx() -> Path:
     return FIXTURES

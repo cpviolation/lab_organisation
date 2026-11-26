@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 import typer
 
-from . import analysis, db, importers, legacy, render, repo
+from . import analysis, db, importers, legacy, lock, render, repo
 from .config import Config, load_config
 from .importers import ImportReport
 
@@ -57,10 +57,15 @@ def main(
     config: Path = typer.Option(Path("course.toml"), "--config", "-c", envvar="LAB_CONFIG",
                                 help="Course configuration file."),
 ) -> None:
-    state.config_path = config
+    state.config_path = config.expanduser()
 
 
 def open_db() -> sqlite3.Connection:
+    other = lock.other_user(state.cfg.database)
+    if other is not None:
+        typer.secho(f"Warning: the database is in use on another computer ({other.machine_name}, "
+                    f"last used {other.seen_at:%d/%m %H:%M}). Changes made on both are not merged: "
+                    "close it there and let the sync finish first.", fg=typer.colors.YELLOW, err=True)
     return db.connect(state.cfg.database)
 
 

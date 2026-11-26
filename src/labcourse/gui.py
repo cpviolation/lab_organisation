@@ -6,6 +6,7 @@ previewed first (dry run), backed up and applied in one transaction.
 
 from __future__ import annotations
 
+import atexit
 import os
 import shutil
 import sqlite3
@@ -17,7 +18,7 @@ from typing import Callable
 import pandas as pd
 import streamlit as st
 
-from labcourse import analysis, db, importers, render, repo
+from labcourse import analysis, db, importers, lock, render, repo
 from labcourse.cli import split_ids
 from labcourse.config import Config, load_config
 from labcourse.importers import ImportReport
@@ -28,7 +29,7 @@ st.set_page_config(page_title="Laboratorio", page_icon="🧪", layout="wide")
 # ---------------------------------------------------------------- setup
 
 def config_path() -> Path:
-    return Path(os.environ.get("LAB_CONFIG", "course.toml")).resolve()
+    return Path(os.environ.get("LAB_CONFIG", "course.toml")).expanduser().resolve()
 
 
 @st.cache_resource
@@ -42,6 +43,34 @@ def get_config() -> Config:
         st.error(f"File di configurazione non trovato: `{path}`. Esegui `lab init` nella cartella del corso.")
         st.stop()
     return _load_config(str(path), path.stat().st_mtime)
+
+
+@st.cache_resource
+def _release_lock_at_exit(database: str) -> None:
+    atexit.register(lock.release, database)
+
+
+def check_lock(cfg: Config) -> None:
+    """Stop with a warning if another computer is using the database (shared through
+    Google Drive or a similar synced folder); otherwise mark it as used by this one."""
+    other = lock.other_user(cfg.database)
+    if other is not None:
+        st.title(cfg.title)
+        st.warning(
+            f"**Il database è in uso su un altro computer: {other.machine_name}** "
+            f"(aperto il {other.since_at:%d/%m alle %H:%M}, ultimo utilizzo il {other.seen_at:%d/%m alle %H:%M}).\n\n"
+            "Il database non può essere modificato da due computer insieme: le modifiche di uno "
+            "dei due andrebbero perse. Chiudi la GUI sull'altro computer, aspetta che Google Drive "
+            "abbia finito di sincronizzare e poi ricarica questa pagina.",
+            icon="⚠️",
+        )
+        st.caption(f"Database: `{cfg.database}`")
+        if st.button("L'altro computer è chiuso e sincronizzato: usa questo", key="lock-takeover"):
+            lock.acquire(cfg.database)
+            st.rerun()
+        st.stop()
+    lock.acquire(cfg.database)
+    _release_lock_at_exit(str(cfg.database))
 
 
 def connect(cfg: Config) -> sqlite3.Connection:
@@ -877,6 +906,7 @@ PAGES = {
 
 def main() -> None:
     cfg = get_config()
+    check_lock(cfg)
     conn = connect(cfg)
     try:
         with st.sidebar:
